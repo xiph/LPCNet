@@ -12,6 +12,7 @@ from keras.callbacks import ModelCheckpoint
 from ulaw import ulaw2lin, lin2ulaw
 import keras.backend as K
 import h5py
+from scipy.signal import lfilter
 
 import tensorflow as tf
 from keras.backend.tensorflow_backend import set_session
@@ -33,10 +34,8 @@ model, _, _ = lpcnet.new_lpcnet_model()
 model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['sparse_categorical_accuracy'])
 model.summary()
 
-exc_file = sys.argv[1]     # not used at present
+pcm_file = sys.argv[1]     # 16 bit unsigned short PCM samples
 feature_file = sys.argv[2]
-pred_file = sys.argv[3]    # LPC predictor samples. Not used at present, see below
-pcm_file = sys.argv[4]     # 16 bit unsigned short PCM samples
 frame_size = 160
 nb_features = 55
 nb_used_features = model.nb_used_features
@@ -46,11 +45,14 @@ pcm_chunk_size = frame_size*feature_chunk_size
 # u for unquantised, load 16 bit PCM samples and convert to mu-law
 
 udata = np.fromfile(pcm_file, dtype='int16')
+udata = np.concatenate([udata[:frame_size//2], udata]);
+# Apply pre-emphasis
+udata[1:] = np.round(lfilter([1, -2, 1], [1, -1.99599, 0.99600], udata[1:]-0.85*udata[:-1]))
+
 data = lin2ulaw(udata)
-nb_frames = len(data)//pcm_chunk_size
 
 features = np.fromfile(feature_file, dtype='float32')
-
+nb_frames = len(features)//(feature_chunk_size*nb_features)
 # limit to discrete number of frames
 data = data[:nb_frames*pcm_chunk_size]
 udata = udata[:nb_frames*pcm_chunk_size]
@@ -73,8 +75,7 @@ features = np.reshape(features, (nb_frames*feature_chunk_size, nb_features))
 # Note: the LPC predictor output is now calculated by the loop below, this code was
 # for an ealier version that implemented the prediction filter in C
 
-upred = np.fromfile(pred_file, dtype='int16')
-upred = upred[:nb_frames*pcm_chunk_size]
+upred = np.zeros((nb_frames*pcm_chunk_size,), dtype='int16')
 
 # Use 16th order LPC to generate LPC prediction output upred[] and (in
 # mu-law form) pred[]
@@ -116,7 +117,7 @@ periods = (50*features[:,:,36:37]+100).astype('int16')
 in_data = np.concatenate([in_data, pred], axis=-1)
 
 # dump models to disk as we go
-checkpoint = ModelCheckpoint('lpcnet9_384_10_G16_{epoch:02d}.h5')
+checkpoint = ModelCheckpoint('lpcnet10e_384_10_G16_{epoch:02d}.h5')
 
 #model.load_weights('wavenet4f2_30.h5')
 model.compile(optimizer=Adam(0.001, amsgrad=True, decay=5e-5), loss='sparse_categorical_crossentropy', metrics=['sparse_categorical_accuracy'])
