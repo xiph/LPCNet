@@ -9,16 +9,23 @@ static void sparse_sgemv_accum16(float *out, const float *w, int rows, const int
    {
       int cols;
       cols = *idx++;
+      float * restrict y;
+      y = &out[i];
+      float32x4_t y0_3 = vld1q_f32(&y[0]);
       for (j=0;j<cols;j++)
       {
-         float * restrict y;
          float xj;
          xj = x[*idx++];
-         y = &out[i];
-         y[0] += w[0]*xj;
+
+	 float32x4_t w0_3 = vld1q_f32(&w[0]);
+	 y0_3 = vmlaq_n_f32(y0_3, w0_3, xj);
+	 
+         /*
+	 y[0] += w[0]*xj;
          y[1] += w[1]*xj;
          y[2] += w[2]*xj;
          y[3] += w[3]*xj;
+	 */
          y[4] += w[4]*xj;
          y[5] += w[5]*xj;
          y[6] += w[6]*xj;
@@ -33,5 +40,7 @@ static void sparse_sgemv_accum16(float *out, const float *w, int rows, const int
          y[15] += w[15]*xj;
          w += 16;
       }
+      vst1q_f32(&y[0], y0_3);
+      
    }
 }
