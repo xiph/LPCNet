@@ -30,6 +30,7 @@
 #include "config.h"
 #endif
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 #include "opus_types.h"
@@ -43,7 +44,7 @@
 
 #ifdef __AVX2__
 #include "vec_avx2.h"
-#elsif __ARM_NEON__
+#elif __ARM_NEON__
 #include "vec_neon.h"
 #else
 #warning Compiling without any vectorization. This code will be very slow
