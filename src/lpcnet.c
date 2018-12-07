@@ -96,7 +96,6 @@ void run_frame_network(LPCNetState *lpcnet, float *condition, float *gru_a_condi
     float in[FRAME_INPUT_SIZE];
     float conv1_out[FEATURE_CONV1_OUT_SIZE];
     float conv2_out[FEATURE_CONV2_OUT_SIZE];
-    float dense1_out[FEATURE_DENSE1_OUT_SIZE];
     net = &lpcnet->nnet;
     RNN_COPY(in, features, NB_FEATURES);
     compute_embedding(&embed_pitch, &in[NB_FEATURES], pitch);
@@ -108,8 +107,8 @@ void run_frame_network(LPCNetState *lpcnet, float *condition, float *gru_a_condi
     for (i=0;i<FEATURE_CONV2_OUT_SIZE;i++) conv2_out[i] += lpcnet->old_input[FEATURES_DELAY-1][i];
     memmove(lpcnet->old_input[1], lpcnet->old_input[0], (FEATURES_DELAY-1)*FRAME_INPUT_SIZE*sizeof(in[0]));
     memcpy(lpcnet->old_input[0], in, FRAME_INPUT_SIZE*sizeof(in[0]));
-    compute_dense(&feature_dense1, dense1_out, conv2_out);
-    compute_dense(&feature_dense2, condition, dense1_out);
+    compute_gru2(&features_gru, net->features_gru_state, conv2_out);
+    compute_dense(&feature_dense2, condition, net->features_gru_state);
     compute_dense(&gru_a_dense_feature, gru_a_condition, condition);
     if (lpcnet->frame_count < 1000) lpcnet->frame_count++;
 }

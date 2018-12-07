@@ -134,7 +134,11 @@ def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features = 38, use_g
     
     cfeat = fconv2(fconv1(cat_feat))
 
-    fdense1 = Dense(128, activation='tanh', name='feature_dense1')
+    if use_gpu:
+        fdense1 = CuDNNGRU(256, return_sequences=True, name='features_gru')
+    else:
+        fdense1 = GRU(256, return_sequences=True, recurrent_activation="sigmoid", reset_after='true', name='features_gru')
+
     fdense2 = Dense(128, activation='tanh', name='feature_dense2')
 
     cfeat = Add()([cfeat, cat_feat])
