@@ -47,7 +47,7 @@ model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=
 
 feature_file = sys.argv[1]
 out_file = sys.argv[2]
-frame_size = 160
+frame_size = 320
 nb_features = 55
 nb_used_features = model.nb_used_features
 
@@ -63,7 +63,7 @@ periods = (.1 + 50*features[:,:,36:37]+100).astype('int16')
 
 
 
-model.load_weights('lpcnet9_384_10_G16_120.h5')
+model.load_weights('lpcnet16_384_10_G16_22.h5')
 
 order = 16
 

@@ -42,7 +42,7 @@ config = tf.ConfigProto()
 
 # use this option to reserve GPU memory, e.g. for running more than
 # one thing at a time.  Best to disable for GPUs with small memory
-config.gpu_options.per_process_gpu_memory_fraction = 0.44
+#config.gpu_options.per_process_gpu_memory_fraction = 0.44
 
 set_session(tf.Session(config=config))
 
@@ -58,7 +58,7 @@ model.summary()
 
 feature_file = sys.argv[1]
 pcm_file = sys.argv[2]     # 16 bit unsigned short PCM samples
-frame_size = 160
+frame_size = 320
 nb_features = 55
 nb_used_features = model.nb_used_features
 feature_chunk_size = 15
@@ -143,8 +143,8 @@ in_data = np.concatenate([in_data, pred], axis=-1)
 del pred
 
 # dump models to disk as we go
-checkpoint = ModelCheckpoint('lpcnet15_384_10_G16_{epoch:02d}.h5')
+checkpoint = ModelCheckpoint('lpcnet16_384_10_G16_{epoch:02d}.h5')
 
-#model.load_weights('lpcnet9b_384_10_G16_01.h5')
+model.load_weights('lpcnet9b_384_10_G16_01.h5')
 model.compile(optimizer=Adam(0.001, amsgrad=True, decay=5e-5), loss='sparse_categorical_crossentropy', metrics=['sparse_categorical_accuracy'])
-model.fit([in_data, in_exc, features, periods], out_data, batch_size=batch_size, epochs=nb_epochs, validation_split=0.0, callbacks=[checkpoint, lpcnet.Sparsify(2000, 40000, 400, (0.1, 0.1, 0.1))])
+model.fit([in_data, in_exc, features, periods], out_data, batch_size=batch_size, epochs=nb_epochs, validation_split=0.0, callbacks=[checkpoint, lpcnet.Sparsify(2000, 40000, 400, (0.05, 0.05, 0.2))])

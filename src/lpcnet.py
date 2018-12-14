@@ -140,7 +140,7 @@ def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features = 38, use_g
     cfeat = Add()([cfeat, cat_feat])
     cfeat = fdense2(fdense1(cfeat))
     
-    rep = Lambda(lambda x: K.repeat_elements(x, 160, 1))
+    rep = Lambda(lambda x: K.repeat_elements(x, 320, 1))
 
     if use_gpu:
         rnn = CuDNNGRU(rnn_units1, return_sequences=True, return_state=True, name='gru_a')
