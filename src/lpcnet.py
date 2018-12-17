@@ -135,12 +135,13 @@ def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features = 38, use_g
     cfeat = fconv2(fconv1(cat_feat))
 
     fdense1 = Dense(128, activation='tanh', name='feature_dense1')
-    fdense2 = Dense(128, activation='tanh', name='feature_dense2')
+    fdense2 = Dense(256, activation='tanh', name='feature_dense2')
 
     cfeat = Add()([cfeat, cat_feat])
     cfeat = fdense2(fdense1(cfeat))
     
-    rep = Lambda(lambda x: K.repeat_elements(x, 320, 1))
+    cfeat = Reshape((-1, 128))(cfeat)
+    rep = Lambda(lambda x: K.repeat_elements(x, 160, 1))
 
     if use_gpu:
         rnn = CuDNNGRU(rnn_units1, return_sequences=True, return_state=True, name='gru_a')
