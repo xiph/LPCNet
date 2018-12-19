@@ -30,10 +30,70 @@
 #include "lpcnet.h"
 #include "freq.h"
 
+#include "ceps_codebooks.c"
+
+int vq_quantize(const float *codebook, int nb_entries, const float *x, int ndim, float *dist)
+{
+  int i, j;
+  float min_dist = 1e15;
+  int nearest = 0;
+  
+  for (i=0;i<nb_entries;i++)
+  {
+    float dist=0;
+    for (j=0;j<ndim;j++)
+      dist += (x[j]-codebook[i*ndim+j])*(x[j]-codebook[i*ndim+j]);
+    if (dist<min_dist)
+    {
+      min_dist = dist;
+      nearest = i;
+    }
+  }
+  if (dist)
+    *dist = min_dist;
+  return nearest;
+}
+
+int quantize(float *x, float *mem)
+{
+    int i;
+    int id, id2;
+    float ref[NB_BANDS];
+    RNN_COPY(ref, x, NB_BANDS);
+    for (i=0;i<NB_BANDS;i++) {
+        x[i] -= 0.75f*mem[i];
+    }
+    id = vq_quantize(ceps_codebook1, 1024, x, NB_BANDS, NULL);
+    for (i=0;i<NB_BANDS;i++) {
+        x[i] -= ceps_codebook1[id*NB_BANDS + i];
+    }
+    id2 = vq_quantize(ceps_codebook2, 1024, x, NB_BANDS, NULL);
+    for (i=0;i<NB_BANDS;i++) {
+        x[i] = ceps_codebook2[id2*NB_BANDS + i];
+    }
+    for (i=0;i<NB_BANDS;i++) {
+        x[i] += ceps_codebook1[id*NB_BANDS + i];
+    }
+    for (i=0;i<NB_BANDS;i++) {
+        x[i] += 0.75f*mem[i];
+        mem[i] = x[i];
+    }
+    if (1) {
+        float err = 0;
+        for (i=0;i<NB_BANDS;i++) {
+            err += (x[i]-ref[i])*(x[i]-ref[i]);
+        }
+        printf("%f\n", sqrt(err/NB_BANDS));
+    }
+    
+    return id;
+}
+
 
 int main(int argc, char **argv) {
     FILE *fin, *fout;
     LPCNetState *net;
+    float vq_mem[NB_BANDS] = {0};
     net = lpcnet_create();
     if (argc != 3)
     {
@@ -60,6 +120,7 @@ int main(int argc, char **argv) {
         if (feof(fin)) break;
         RNN_COPY(features, in_features, NB_FEATURES);
         RNN_CLEAR(&features[18], 18);
+        quantize(features, vq_mem);
         lpcnet_synthesize(net, pcm, features, FRAME_SIZE);
         fwrite(pcm, sizeof(pcm[0]), FRAME_SIZE, fout);
     }
