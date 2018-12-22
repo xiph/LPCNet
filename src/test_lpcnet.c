@@ -78,7 +78,7 @@ int quantize(float *x, float *mem)
         x[i] += 0.75f*mem[i];
         mem[i] = x[i];
     }
-    if (1) {
+    if (0) {
         float err = 0;
         for (i=0;i<NB_BANDS;i++) {
             err += (x[i]-ref[i])*(x[i]-ref[i]);
@@ -121,6 +121,7 @@ int main(int argc, char **argv) {
         RNN_COPY(features, in_features, NB_FEATURES);
         RNN_CLEAR(&features[18], 18);
         quantize(features, vq_mem);
+        features[37] = (1.f/7)*floor(.5 + 7*features[37]); 
         lpcnet_synthesize(net, pcm, features, FRAME_SIZE);
         fwrite(pcm, sizeof(pcm[0]), FRAME_SIZE, fout);
     }

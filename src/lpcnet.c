@@ -161,6 +161,8 @@ void lpcnet_synthesize(LPCNetState *lpcnet, short *output, const float *features
     memcpy(lpc, lpcnet->old_lpc[FEATURES_DELAY-1], LPC_ORDER*sizeof(lpc[0]));
     memmove(lpcnet->old_lpc[1], lpcnet->old_lpc[0], (FEATURES_DELAY-1)*LPC_ORDER*sizeof(lpc[0]));
     lpc_from_cepstrum(lpcnet->old_lpc[0], features);
+    //for (i=0;i<LPC_ORDER;i++) printf("%f ", lpc[i]);
+    //printf("\n");
     if (lpcnet->frame_count <= FEATURES_DELAY)
     {
         RNN_CLEAR(output, N);
@@ -179,6 +181,7 @@ void lpcnet_synthesize(LPCNetState *lpcnet, short *output, const float *features
         pred_ulaw = lin2ulaw(pred);
         run_sample_network(&lpcnet->nnet, pdf, condition, gru_a_condition, lpcnet->last_exc, last_sig_ulaw, pred_ulaw);
         exc = sample_from_pdf(pdf, DUAL_FC_OUT_SIZE, MAX16(0, 1.5f*pitch_gain - .5f), PDF_FLOOR);
+        printf("%f\n", ulaw2lin(exc));
         pcm = pred + ulaw2lin(exc);
         RNN_MOVE(&lpcnet->last_sig[1], &lpcnet->last_sig[0], LPC_ORDER-1);
         lpcnet->last_sig[0] = pcm;

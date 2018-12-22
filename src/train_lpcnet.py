@@ -42,7 +42,7 @@ config = tf.ConfigProto()
 
 # use this option to reserve GPU memory, e.g. for running more than
 # one thing at a time.  Best to disable for GPUs with small memory
-#config.gpu_options.per_process_gpu_memory_fraction = 0.44
+config.gpu_options.per_process_gpu_memory_fraction = 0.88
 
 set_session(tf.Session(config=config))
 
@@ -96,7 +96,7 @@ features = np.reshape(features, (nb_frames*feature_chunk_size, nb_features))
 # Note: the LPC predictor output is now calculated by the loop below, this code was
 # for an ealier version that implemented the prediction filter in C
 
-upred = np.zeros((nb_frames*pcm_chunk_size,), dtype='float32')
+upred = np.zeros((nb_frames*pcm_chunk_size,), dtype='int16')
 
 # Use 16th order LPC to generate LPC prediction output upred[] and (in
 # mu-law form) pred[]
@@ -119,6 +119,7 @@ in_data = in_data.astype('uint8')
 # ideal excitation in_exc
 
 out_data = lin2ulaw(udata-upred)
+print("lin std = ", np.std(udata-upred), ",  ulaw std = ", np.std(out_data))
 del upred
 del udata
 in_exc = np.concatenate([out_data[0:1], out_data[:-1]]);
@@ -143,7 +144,7 @@ in_data = np.concatenate([in_data, pred], axis=-1)
 del pred
 
 # dump models to disk as we go
-checkpoint = ModelCheckpoint('lpcnet16_384_10_G16_{epoch:02d}.h5')
+checkpoint = ModelCheckpoint('lpcnet17qp_384_10_G16_{epoch:02d}.h5')
 
 model.load_weights('lpcnet9b_384_10_G16_01.h5')
 model.compile(optimizer=Adam(0.001, amsgrad=True, decay=5e-5), loss='sparse_categorical_crossentropy', metrics=['sparse_categorical_accuracy'])
