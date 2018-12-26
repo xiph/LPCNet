@@ -86,7 +86,9 @@ features = features[:nb_frames*feature_chunk_size*nb_features]
 in_data = np.concatenate([data[0:1], data[:-1]]);
 noise = np.concatenate([np.zeros((len(data)*1//5)), np.random.randint(-3, 3, len(data)*1//5), np.random.randint(-2, 2, len(data)*1//5), np.random.randint(-1, 1, len(data)*2//5)])
 #noise = np.round(np.concatenate([np.zeros((len(data)*1//5)), np.random.laplace(0, 1.2, len(data)*1//5), np.random.laplace(0, .77, len(data)*1//5), np.random.laplace(0, .33, len(data)*1//5), np.random.randint(-1, 1, len(data)*1//5)]))
+del data
 in_data = in_data + noise
+del noise
 in_data = np.clip(in_data, 0, 255)
 
 features = np.reshape(features, (nb_frames*feature_chunk_size, nb_features))
@@ -94,7 +96,7 @@ features = np.reshape(features, (nb_frames*feature_chunk_size, nb_features))
 # Note: the LPC predictor output is now calculated by the loop below, this code was
 # for an ealier version that implemented the prediction filter in C
 
-upred = np.zeros((nb_frames*pcm_chunk_size,), dtype='int16')
+upred = np.zeros((nb_frames*pcm_chunk_size,), dtype='float32')
 
 # Use 16th order LPC to generate LPC prediction output upred[] and (in
 # mu-law form) pred[]
@@ -105,6 +107,7 @@ for i in range(2, nb_frames*feature_chunk_size):
     for k in range(16):
         upred[i*frame_size:(i+1)*frame_size] = upred[i*frame_size:(i+1)*frame_size] - \
             pred_in[i*frame_size-k:(i+1)*frame_size-k]*features[i, nb_features-16+k]
+del pred_in
 
 pred = lin2ulaw(upred)
 
@@ -116,6 +119,8 @@ in_data = in_data.astype('uint8')
 # ideal excitation in_exc
 
 out_data = lin2ulaw(udata-upred)
+del upred
+del udata
 in_exc = np.concatenate([out_data[0:1], out_data[:-1]]);
 
 out_data = np.reshape(out_data, (nb_frames, pcm_chunk_size, 1))
@@ -131,13 +136,15 @@ features[:,:,18:36] = 0
 pred = np.reshape(pred, (nb_frames, pcm_chunk_size, 1))
 pred = pred.astype('uint8')
 
-periods = (50*features[:,:,36:37]+100).astype('int16')
+periods = (.1 + 50*features[:,:,36:37]+100).astype('int16')
 
 in_data = np.concatenate([in_data, pred], axis=-1)
 
-# dump models to disk as we go
-checkpoint = ModelCheckpoint('lpcnet9b_384_10_G16_{epoch:02d}.h5')
+del pred
 
-#model.load_weights('wavenet4f2_30.h5')
+# dump models to disk as we go
+checkpoint = ModelCheckpoint('lpcnet15_384_10_G16_{epoch:02d}.h5')
+
+#model.load_weights('lpcnet9b_384_10_G16_01.h5')
 model.compile(optimizer=Adam(0.001, amsgrad=True, decay=5e-5), loss='sparse_categorical_crossentropy', metrics=['sparse_categorical_accuracy'])
-model.fit([in_data, in_exc, features, periods], out_data, batch_size=batch_size, epochs=nb_epochs, validation_split=0.0, callbacks=[checkpoint, lpcnet.Sparsify(2000, 40000, 400, 0.1)])
+model.fit([in_data, in_exc, features, periods], out_data, batch_size=batch_size, epochs=nb_epochs, validation_split=0.0, callbacks=[checkpoint, lpcnet.Sparsify(2000, 40000, 400, (0.1, 0.1, 0.1))])

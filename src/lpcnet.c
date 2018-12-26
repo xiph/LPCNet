@@ -32,8 +32,6 @@
 #include "arch.h"
 #include "lpcnet.h"
 
-#define NB_FEATURES 38
-#define NB_TOTAL_FEATURES 55
 
 #define LPC_ORDER 16
 #define PREEMPH 0.85f
@@ -52,6 +50,7 @@ struct LPCNetState {
     float last_sig[LPC_ORDER];
     float old_input[FEATURES_DELAY][FEATURE_CONV2_OUT_SIZE];
     float old_lpc[FEATURES_DELAY][LPC_ORDER];
+    float old_gain[FEATURES_DELAY];
     int frame_count;
     float deemph_mem;
 };
@@ -142,7 +141,7 @@ void lpcnet_destroy(LPCNetState *lpcnet)
     free(lpcnet);
 }
 
-void lpcnet_synthesize(LPCNetState *lpcnet, short *output, const float *features, const float *new_lpc, int N)
+void lpcnet_synthesize(LPCNetState *lpcnet, short *output, const float *features, int N)
 {
     int i;
     float condition[FEATURE_DENSE2_OUT_SIZE];
@@ -154,13 +153,14 @@ void lpcnet_synthesize(LPCNetState *lpcnet, short *output, const float *features
     /* FIXME: Remove this -- it's just a temporary hack to match the Python code. */
     static int start = LPC_ORDER+1;
     /* FIXME: Do proper rounding once the Python code rounds properly. */
-    pitch = (int)floor(50*features[36]+100);
-    /* FIXME: get the pitch gain from 2 frames in the past. */
-    pitch_gain = features[PITCH_GAIN_FEATURE];
+    pitch = (int)floor(.1 + 50*features[36]+100);
+    pitch_gain = lpcnet->old_gain[FEATURES_DELAY-1];
+    memmove(&lpcnet->old_gain[1], &lpcnet->old_gain[0], (FEATURES_DELAY-1)*sizeof(lpcnet->old_gain[0]));
+    lpcnet->old_gain[0] = features[PITCH_GAIN_FEATURE];
     run_frame_network(lpcnet, condition, gru_a_condition, features, pitch);
     memcpy(lpc, lpcnet->old_lpc[FEATURES_DELAY-1], LPC_ORDER*sizeof(lpc[0]));
     memmove(lpcnet->old_lpc[1], lpcnet->old_lpc[0], (FEATURES_DELAY-1)*LPC_ORDER*sizeof(lpc[0]));
-    memcpy(lpcnet->old_lpc[0], new_lpc, LPC_ORDER*sizeof(lpc[0]));
+    lpc_from_cepstrum(lpcnet->old_lpc[0], features);
     if (lpcnet->frame_count <= FEATURES_DELAY)
     {
         RNN_CLEAR(output, N);
@@ -185,40 +185,13 @@ void lpcnet_synthesize(LPCNetState *lpcnet, short *output, const float *features
         lpcnet->last_exc = exc;
         pcm += PREEMPH*lpcnet->deemph_mem;
         lpcnet->deemph_mem = pcm;
+        if (pcm<-32767) pcm = -32767;
+        if (pcm>32767) pcm = 32767;
         output[i] = (int)floor(.5 + pcm);
     }
     start = 0;
 }
 
 #if 1
-#define FRAME_SIZE 160
-int main(int argc, char **argv) {
-    FILE *fin, *fout;
-    LPCNetState *net;
-    net = lpcnet_create();
-    if (argc != 3)
-    {
-        fprintf(stderr, "usage: test_lpcnet <features.f32> <output.pcm>\n");
-        return 0;
-    }
-    fin = fopen(argv[1], "rb");
-    fout = fopen(argv[2], "wb");
-    while (1) {
-        float in_features[NB_TOTAL_FEATURES];
-        float features[NB_FEATURES];
-        float lpc[LPC_ORDER];
-        short pcm[FRAME_SIZE];
-        fread(in_features, sizeof(features[0]), NB_TOTAL_FEATURES, fin);
-        RNN_COPY(features, in_features, NB_FEATURES);
-        RNN_CLEAR(&features[18], 18);
-        RNN_COPY(lpc, &in_features[NB_TOTAL_FEATURES-LPC_ORDER], LPC_ORDER);
-        if (feof(fin)) break;
-        lpcnet_synthesize(net, pcm, features, lpc, FRAME_SIZE);
-        fwrite(pcm, sizeof(pcm[0]), FRAME_SIZE, fout);
-    }
-    fclose(fin);
-    fclose(fout);
-    lpcnet_destroy(net);
-    return 0;
-}
+
 #endif
