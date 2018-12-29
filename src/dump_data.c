@@ -200,10 +200,11 @@ static void rand_resp(float *a, float *b) {
   b[1] = .75*uni_rand();
 }
 
-void write_audio(DenoiseState *st, const short *pcm, FILE *file) {
+void write_audio(DenoiseState *st, const short *pcm, float noise_std, FILE *file) {
   int i;
   unsigned char data[4*FRAME_SIZE];
   for (i=0;i<FRAME_SIZE;i++) {
+    int noise;
     float p=0;
     float e;
     int j;
@@ -218,7 +219,8 @@ void write_audio(DenoiseState *st, const short *pcm, FILE *file) {
     /* Excitation out. */
     data[4*i+3] = e;
     /* Simulate error on excitation. */
-    e += rand()%3-1;
+    noise = (int)floor(.5 + noise_std*.707*(log((float)rand()/RAND_MAX)-log((float)rand()/RAND_MAX)));
+    e += noise;
     e = IMIN(255, IMAX(0, e));
     
     RNN_MOVE(&st->sig_mem[1], &st->sig_mem[0], LPC_ORDER-1);
@@ -251,6 +253,7 @@ int main(int argc, char **argv) {
   float old_speech_gain = 1;
   int one_pass_completed = 0;
   DenoiseState *st;
+  float noise_std=0;
   int training = -1;
   st = rnnoise_create();
   if (argc == 5 && strcmp(argv[1], "-train")==0) training = 1;
@@ -317,6 +320,7 @@ int main(int argc, char **argv) {
       if (rand()%100==0) speech_gain = 0;
       gain_change_count = 0;
       rand_resp(a_sig, b_sig);
+      noise_std = 3*(float)rand()/RAND_MAX;
     }
     biquad(x, mem_hp_x, x, b_hp, a_hp, FRAME_SIZE);
     biquad(x, mem_resp_x, x, b_sig, a_sig, FRAME_SIZE);
@@ -332,7 +336,7 @@ int main(int argc, char **argv) {
     fwrite(features, sizeof(float), NB_FEATURES, ffeat);
     /* PCM is delayed by 1/2 frame to make the features centered on the frames. */
     for (i=0;i<FRAME_SIZE-TRAINING_OFFSET;i++) pcm[i+TRAINING_OFFSET] = float2short(x[i]);
-    if (fpcm) write_audio(st, pcm, fpcm);
+    if (fpcm) write_audio(st, pcm, noise_std, fpcm);
     //if (fpcm) fwrite(pcm, sizeof(short), FRAME_SIZE, fpcm);
     for (i=0;i<TRAINING_OFFSET;i++) pcm[i] = float2short(x[i+FRAME_SIZE-TRAINING_OFFSET]);
     old_speech_gain = speech_gain;
