@@ -187,33 +187,52 @@ static void sgemv_accum16(float *out, const float *weights, int rows, int cols, 
 }
 static void sparse_sgemv_accum16(float *out, const float *weights, int rows, const int *idx, const float *x)
 {
-   int i, j;
-   for (i=0;i<rows;i+=16)
-   {
+    int i=-16;
+    #pragma omp parallel
+    while (i<rows)
+    { 
       float * restrict y;
       int cols;
+      int j;
+      const float *lc_weights;
+      _Bool flag=1;
       __m256 vy0, vy8;
-      y = &out[i];
-      vy0 = _mm256_loadu_ps(&y[0]);
-      vy8 = _mm256_loadu_ps(&y[8]);
-      cols = *idx++;
-      for (j=0;j<cols;j++)
+      #pragma omp critical
       {
-         int id;
-         __m256 vxj;
-         __m256 vw;
-         id = *idx++;
-         vxj = _mm256_broadcast_ss(&x[id]);
-
-         vw = _mm256_loadu_ps(&weights[0]);
-         vy0 = _mm256_fmadd_ps(vw, vxj, vy0);
-
-         vw = _mm256_loadu_ps(&weights[8]);
-         vy8 = _mm256_fmadd_ps(vw, vxj, vy8);
-         weights += 16;
+         // initialization
+         i+=16;
+         if (i>=rows)
+            flag=0;
+         else 
+         {
+            y = &out[i];
+            cols = *idx++;
+            idx+=cols;
+            lc_weights=weights;
+            weights+=16*cols;
+         }
       }
-      _mm256_storeu_ps (&y[0], vy0);
-      _mm256_storeu_ps (&y[8], vy8);
+      if (flag) 
+      {
+         vy0 = _mm256_loadu_ps(&y[0]);
+         vy8 = _mm256_loadu_ps(&y[8]);
+         for (j=0;j<cols;j++)
+         {
+            int id;
+            __m256 vxj;
+            __m256 vw;
+            id = cols+j;
+            vxj = _mm256_broadcast_ss(&x[id]);
+
+            vw = _mm256_loadu_ps(&lc_weights[0]);
+            vy0 = _mm256_fmadd_ps(vw, vxj, vy0);
+
+            vw = _mm256_loadu_ps(&lc_weights[8]);
+            vy8 = _mm256_fmadd_ps(vw, vxj, vy8);
+            lc_weights += 16;
+         }
+         _mm256_storeu_ps (&y[0], vy0);
+         _mm256_storeu_ps (&y[8], vy8);
+      }
    }
 }
-
