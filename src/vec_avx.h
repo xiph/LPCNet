@@ -187,41 +187,71 @@ static void sgemv_accum16(float *out, const float *weights, int rows, int cols, 
 }
 static void sparse_sgemv_accum16(float *out, const float *weights, int rows, const int *idx, const float *x)
 {
-    int i=-16;
-    #pragma omp parallel
-    while (i<rows)
-    { 
+   /* original code
+   int i, j;
+   for (i=0;i<rows;i+=16)
+   {
       float * restrict y;
       int cols;
-      int j;
-      const float *lc_weights;
-      _Bool flag=1;
       __m256 vy0, vy8;
-      #pragma omp critical
+      y = &out[i];
+      vy0 = _mm256_loadu_ps(&y[0]);
+      vy8 = _mm256_loadu_ps(&y[8]);
+      cols = *idx++;
+      for (j=0;j<cols;j++)
       {
-         // initialization
-         i+=16;
-         if (i>=rows)
-            flag=0;
-         else 
-         {
-            y = &out[i];
-            cols = *idx++;
-            idx+=cols;
-            lc_weights=weights;
-            weights+=16*cols;
-         }
+         int id;
+         __m256 vxj;
+         __m256 vw;
+         id = *idx++;
+         vxj = _mm256_broadcast_ss(&x[id]);
+
+         vw = _mm256_loadu_ps(&weights[0]);
+         vy0 = _mm256_fmadd_ps(vw, vxj, vy0);
+
+         vw = _mm256_loadu_ps(&weights[8]);
+         vy8 = _mm256_fmadd_ps(vw, vxj, vy8);
+         weights += 16;
       }
-      if (flag) 
-      {
+      _mm256_storeu_ps (&y[0], vy0);
+      _mm256_storeu_ps (&y[8], vy8);
+   }
+   */
+   
+   int i, j;
+   //initialization
+   const int *precomputed_idx[rows];
+   const float *precomputed_weights[rows];
+   for (i=0;i<rows;i+=16)
+   {
+      precomputed_weights[i] = weights;
+      weights += 16 * (*idx);
+      precomputed_idx[i] = idx++;
+      idx += *precomputed_idx[i];
+   }
+
+   #pragma omp parallel
+   {
+      const int *lc_idx;
+      const float *lc_weights;
+      float * restrict y;
+      __m256 vy0, vy8;
+      int cols;
+      for (i=0;i<rows;i+=16)
+      {  
+         lc_weights = precomputed_weights[i];
+         y = &out[i];
          vy0 = _mm256_loadu_ps(&y[0]);
          vy8 = _mm256_loadu_ps(&y[8]);
+         lc_idx = precomputed_idx[i];
+         cols = *local_idx++;
+         #pragma omp critical
          for (j=0;j<cols;j++)
          {
             int id;
             __m256 vxj;
             __m256 vw;
-            id = cols+j;
+            id = *lc_idx++;
             vxj = _mm256_broadcast_ss(&x[id]);
 
             vw = _mm256_loadu_ps(&lc_weights[0]);
