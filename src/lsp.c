@@ -128,8 +128,8 @@ cheb_poly_eva(float *coef,float x,int order)
   This function converts LPC coefficients to LSP coefficients.
 
 \*---------------------------------------------------------------------------*/
-
-int lpc_to_lsp (float *a, int order, float *freq, int nb, float delta)
+static int
+lpc_to_lsp_impl(float *a, int order, float *freq, int nb, float delta)
 /*  float *a 		     	lpc coefficients			*/
 /*  int order			order of LPC coefficients (10) 		*/
 /*  float *freq 	      	LSP frequencies in radians      	*/
@@ -244,6 +244,37 @@ int lpc_to_lsp (float *a, int order, float *freq, int nb, float delta)
     }
 
     return(roots);
+}
+
+void lpc_to_lsp(float *a, int order, float *freq)
+{
+    int iter, i;
+    float delta = .01;
+    for (iter=0;iter<10;iter++) {
+        int j;
+        float tmp;
+        float expand=.0005f;
+        int roots = lpc_to_lsp_impl(a, order, freq, 6, delta);
+        if (roots == order)
+        {
+            //printf("%d\n", iter);
+            return;
+        }
+        delta = 0.002;
+        if (iter == 0) continue;
+        tmp = 1;
+        for (j=0;j<=order;j++)
+        {
+            a[j] *= tmp;
+            tmp *= (1-expand);
+        }
+        expand *= 2;
+    }
+    //printf("failed\n");
+    for (i=0;i<order;i++)
+    {
+        freq[i] = M_PI*(i+1.f)/(order+2.f);
+    }
 }
 
 /*---------------------------------------------------------------------------*\
