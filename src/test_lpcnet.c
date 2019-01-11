@@ -60,10 +60,11 @@ int main(int argc, char **argv) {
         if (feof(fin)) break;
         RNN_COPY(features, in_features, NB_FEATURES);
         RNN_CLEAR(&features[18], 18);
-#if 0
+#if 1
         lpcnet_synthesize(net, pcm, features, FRAME_SIZE);
         fwrite(pcm, sizeof(pcm[0]), FRAME_SIZE, fout);
 #else
+        in_features[17] = in_features[38]-3.5;
         in_features[38] = 1;
         lpc_to_lsp(&in_features[38], 16, &in_features[1]);
         int i;
@@ -71,7 +72,6 @@ int main(int argc, char **argv) {
         for (i=0;i<16;i++) in_features[i+1] *= 10;
         /*for (i=0;i<16;i++)printf("%f ", in_features[i+1]);
         printf("\n");*/
-        in_features[17] = 0;
         fwrite(in_features, sizeof(features[0]), NB_TOTAL_FEATURES, fout);
 #endif
     }

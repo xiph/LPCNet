@@ -126,6 +126,8 @@ void lpcnet_synthesize(LPCNetState *lpcnet, short *output, const float *features
     float pdf[DUAL_FC_OUT_SIZE];
     float gru_a_condition[3*GRU_A_STATE_SIZE];
     int pitch;
+    float tmp_lpc[LPC_ORDER+1];
+    float tmp_lsp[LPC_ORDER];
     float pitch_gain;
     /* FIXME: Remove this -- it's just a temporary hack to match the Python code. */
     static int start = LPC_ORDER+1;
@@ -137,7 +139,12 @@ void lpcnet_synthesize(LPCNetState *lpcnet, short *output, const float *features
     run_frame_network(lpcnet, condition, gru_a_condition, features, pitch);
     memcpy(lpc, lpcnet->old_lpc[FEATURES_DELAY-1], LPC_ORDER*sizeof(lpc[0]));
     memmove(lpcnet->old_lpc[1], lpcnet->old_lpc[0], (FEATURES_DELAY-1)*LPC_ORDER*sizeof(lpc[0]));
-    lpc_from_cepstrum(lpcnet->old_lpc[0], features);
+    for (i=0;i<LPC_ORDER;i++) tmp_lsp[i] = M_PI*(i+1.f)/(16+2.f) + .1*features[1+i];
+    //for (i=0;i<LPC_ORDER;i++) tmp_lsp[i] = features[1+i];
+    lsp_to_lpc(&tmp_lsp[0], tmp_lpc, LPC_ORDER);
+    //for (i=0;i<LPC_ORDER;i++) printf("%f ", tmp_lsp[i]);
+    //printf("\n");
+    memcpy(lpcnet->old_lpc[0], tmp_lpc+1, LPC_ORDER*sizeof(float));
     if (lpcnet->frame_count <= FEATURES_DELAY)
     {
         RNN_CLEAR(output, N);
