@@ -32,6 +32,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "freq.h"
+#include "common.h"
 
 /*---------------------------------------------------------------------------*\
 
@@ -246,10 +247,16 @@ lpc_to_lsp_impl(float *a, int order, float *freq, int nb, float delta)
     return(roots);
 }
 
-void lpc_to_lsp(float *a, int order, float *freq)
+#define MAX_LPC_ORDER 30
+
+void lpc_to_lsp(float *lpc, int order, float *freq)
 {
     int iter, i;
     float delta = .01;
+    float a[MAX_LPC_ORDER+1];
+    celt_assert(order <= MAX_LPC_ORDER);
+    a[0] = 1;
+    RNN_COPY(a+1, lpc, order);
     for (iter=0;iter<10;iter++) {
         int j;
         float tmp;

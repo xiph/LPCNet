@@ -56,6 +56,32 @@ typedef struct {
 } CommonState;
 
 
+void compute_band_energy_from_lpc(float *bandE, const kiss_fft_cpx *X) {
+  int i;
+  float sum[NB_BANDS] = {0};
+  for (i=0;i<NB_BANDS-1;i++)
+  {
+    int j;
+    int band_size;
+    band_size = (eband5ms[i+1]-eband5ms[i])*WINDOW_SIZE_5MS;
+    for (j=0;j<band_size;j++) {
+      float tmp;
+      float frac = (float)j/band_size;
+      tmp = SQUARE(X[(eband5ms[i]*WINDOW_SIZE_5MS) + j].r);
+      tmp += SQUARE(X[(eband5ms[i]*WINDOW_SIZE_5MS) + j].i);
+      tmp = 1.f/(tmp + 1e-9);
+      sum[i] += (1-frac)*tmp;
+      sum[i+1] += frac*tmp;
+    }
+  }
+  sum[0] *= 2;
+  sum[NB_BANDS-1] *= 2;
+  for (i=0;i<NB_BANDS;i++)
+  {
+    bandE[i] = sum[i];
+  }
+}
+
 
 void compute_band_energy(float *bandE, const kiss_fft_cpx *X) {
   int i;

@@ -93,17 +93,35 @@ static short float2short(float x)
 int lowpass = FREQ_SIZE;
 int band_lp = NB_BANDS;
 
-static void frame_analysis(DenoiseState *st, kiss_fft_cpx *X, float *Ex, const float *in) {
+static float frame_analysis(DenoiseState *st, kiss_fft_cpx *X, float *Ex, float *lpc, const float *in) {
   int i;
   float x[WINDOW_SIZE];
+  float ac[LPC_ORDER+1];
+  float rc[LPC_ORDER];
+  float g;
   RNN_COPY(x, st->analysis_mem, OVERLAP_SIZE);
   RNN_COPY(&x[OVERLAP_SIZE], in, FRAME_SIZE);
   RNN_COPY(st->analysis_mem, &in[FRAME_SIZE-OVERLAP_SIZE], OVERLAP_SIZE);
   apply_window(x);
+  _celt_autocorr(x, ac, NULL, 0, LPC_ORDER, WINDOW_SIZE);
+   ac[0] += ac[0]*1e-4 + 320/12/38.;
+  /* Lag windowing. */
+  for (i=1;i<LPC_ORDER+1;i++) ac[i] *= (1 - 6e-5*i*i);
+  g = _celt_lpc(lpc, rc, ac, LPC_ORDER);
   forward_transform(X, x);
   for (i=lowpass;i<FREQ_SIZE;i++)
     X[i].r = X[i].i = 0;
   compute_band_energy(Ex, X);
+  {
+      kiss_fft_cpx LPC[FREQ_SIZE];
+      RNN_CLEAR(x, WINDOW_SIZE);
+      x[0] = 1;
+      for (i=0;i<LPC_ORDER;i++) x[i+1] = lpc[i];
+      forward_transform(LPC, x);
+      compute_band_energy_from_lpc(Ex, LPC);
+      for (i=0;i<NB_BANDS;i++) Ex[i] *= g*(1.f/((float)WINDOW_SIZE*WINDOW_SIZE*WINDOW_SIZE*WINDOW_SIZE));
+  }
+  return g;
 }
 
 static void compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cpx *P,
@@ -118,7 +136,7 @@ static void compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_c
   float tmp[NB_BANDS];
   float follow, logMax;
   float g;
-  frame_analysis(st, X, Ex, in);
+  g = frame_analysis(st, X, Ex, st->lpc, in);
   RNN_MOVE(st->pitch_buf, &st->pitch_buf[FRAME_SIZE], PITCH_BUF_SIZE-FRAME_SIZE);
   RNN_COPY(&st->pitch_buf[PITCH_BUF_SIZE-FRAME_SIZE], in, FRAME_SIZE);
   RNN_COPY(pitch_buf, &st->pitch_buf[0], PITCH_BUF_SIZE);
@@ -152,16 +170,23 @@ static void compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_c
   }
   dct(features, Ly);
   features[0] -= 4;
+#if 0
   g = lpc_from_cepstrum(st->lpc, features);
+#else
+  lpc_to_lsp(st->lpc, LPC_ORDER, &features[NB_BANDS]);
+  for (i=0;i<LPC_ORDER;i++) features[NB_BANDS+i] = (features[NB_BANDS+i] - M_PI*(i+1.f)/(16+2.f)) * 10;
+  features[NB_BANDS+LPC_ORDER] = log10(g) - 3.5;
+  features[NB_BANDS+LPC_ORDER+1] = 0;
+#endif
 #if 0
   for (i=0;i<NB_BANDS;i++) printf("%f ", Ly[i]);
   printf("\n");
 #endif
   features[2*NB_BANDS] = .01*(pitch_index-200);
   features[2*NB_BANDS+1] = gain;
-  features[2*NB_BANDS+2] = log10(g);
+  features[2*NB_BANDS+2] = log10(g) - 3.5;
   for (i=0;i<LPC_ORDER;i++) features[2*NB_BANDS+3+i] = st->lpc[i];
-#if 0
+#if 1
   for (i=0;i<NB_FEATURES;i++) printf("%f ", features[i]);
   printf("\n");
 #endif

@@ -43,8 +43,9 @@
 #define NB_BANDS 18
 
 void lpc_to_lsp(float *a, int order, float *freq);
+void lsp_to_lpc(float *lsp, float *ak, int order);
 
-
+void compute_band_energy_from_lpc(float *bandE, const kiss_fft_cpx *X);
 void compute_band_energy(float *bandE, const kiss_fft_cpx *X);
 void compute_band_corr(float *bandE, const kiss_fft_cpx *X, const kiss_fft_cpx *P);
 
