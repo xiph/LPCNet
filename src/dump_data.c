@@ -186,7 +186,7 @@ static void compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_c
   features[2*NB_BANDS+1] = gain;
   features[2*NB_BANDS+2] = log10(g) - 3.5;
   for (i=0;i<LPC_ORDER;i++) features[2*NB_BANDS+3+i] = st->lpc[i];
-#if 1
+#if 0
   for (i=0;i<NB_FEATURES;i++) printf("%f ", features[i]);
   printf("\n");
 #endif

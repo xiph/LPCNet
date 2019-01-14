@@ -87,7 +87,7 @@ print("ulaw std = ", np.std(out_exc))
 
 features = np.reshape(features, (nb_frames, feature_chunk_size, nb_features))
 features = features[:, :, :nb_used_features]
-features[:,:,18:36] = 0
+#features[:,:,18:36] = 0
 
 periods = (.1 + 50*features[:,:,36:37]+100).astype('int16')
 
@@ -97,7 +97,7 @@ del sig
 del pred
 
 # dump models to disk as we go
-checkpoint = ModelCheckpoint('lpcnet20lsp_384_10_G16_{epoch:02d}.h5')
+checkpoint = ModelCheckpoint('lpcnet22_384_10_G16_{epoch:02d}.h5')
 
 #model.load_weights('lpcnet9b_384_10_G16_01.h5')
 model.compile(optimizer=Adam(0.001, amsgrad=True, decay=5e-5), loss='sparse_categorical_crossentropy')
