@@ -58,7 +58,7 @@ model.summary()
 
 feature_file = sys.argv[1]
 pcm_file = sys.argv[2]     # 16 bit unsigned short PCM samples
-frame_size = 160
+frame_size = model.frame_size
 nb_features = 55
 nb_used_features = model.nb_used_features
 feature_chunk_size = 15

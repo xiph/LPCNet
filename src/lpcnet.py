@@ -36,6 +36,7 @@ import numpy as np
 import h5py
 import sys
 
+frame_size = 160
 pcm_bits = 8
 embed_size = 128
 pcm_levels = 2**pcm_bits
@@ -139,7 +140,8 @@ def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features = 38, use_g
 
     cfeat = fdense2(fdense1(cfeat))
     
-    rep = Lambda(lambda x: K.repeat_elements(x, 160, 1))
+    self.frame_size = frame_size
+    rep = Lambda(lambda x: K.repeat_elements(x, self.frame_size, 1))
 
     if use_gpu:
         rnn = CuDNNGRU(rnn_units1, return_sequences=True, return_state=True, name='gru_a')
