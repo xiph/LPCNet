@@ -40,7 +40,7 @@ config = tf.ConfigProto()
 config.gpu_options.per_process_gpu_memory_fraction = 0.2
 set_session(tf.Session(config=config))
 
-model, enc, dec = lpcnet.new_lpcnet_model()
+model, enc, dec = lpcnet.new_lpcnet_model(use_gpu=False)
 
 model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['sparse_categorical_accuracy'])
 #model.summary()
