@@ -113,7 +113,7 @@ class PCMInit(Initializer):
             'seed': self.seed
         }
 
-def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features = 38, training=False, use_gpu=True):
+def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features = 38, temperature=1, training=False, use_gpu=True):
     pcm = Input(shape=(None, 3))
     feat = Input(shape=(None, nb_used_features))
     pitch = Input(shape=(None, 1))
@@ -148,11 +148,13 @@ def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features = 38, train
         rnn2 = GRU(rnn_units2, return_sequences=True, return_state=True, recurrent_activation="sigmoid", reset_after='true', name='gru_b')
 
     rnn_in = Concatenate()([cpcm, rep(cfeat)])
-    md = MDense(pcm_levels, activation='softmax', name='dual_fc')
+    md = MDense(pcm_levels, activation='linear', name='dual_fc')
+    inv_temp = 1./temperature
+    temp = Lambda(lambda x: x*inv_temp)
     gru_out1, _ = rnn(rnn_in)
     gru_out2, _ = rnn2(Concatenate()([gru_out1, rep(cfeat)]))
-    ulaw_prob = md(gru_out2)
-    
+    ulaw_prob = Activation('softmax')(temp(md(gru_out2)))
+
     model = Model([pcm, feat, pitch], ulaw_prob)
     model.rnn_units1 = rnn_units1
     model.rnn_units2 = rnn_units2
@@ -164,7 +166,7 @@ def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features = 38, train
     dec_rnn_in = Concatenate()([cpcm, dec_feat])
     dec_gru_out1, state1 = rnn(dec_rnn_in, initial_state=dec_state1)
     dec_gru_out2, state2 = rnn2(Concatenate()([dec_gru_out1, dec_feat]), initial_state=dec_state2)
-    dec_ulaw_prob = md(dec_gru_out2)
+    dec_ulaw_prob = Activation('softmax')(temp(md(dec_gru_out2)))
 
     decoder = Model([pcm, dec_feat, dec_state1, dec_state2], [dec_ulaw_prob, state1, state2])
     return model, encoder, decoder
