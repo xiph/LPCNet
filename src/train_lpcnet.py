@@ -56,7 +56,7 @@ teacher, _, _ = lpcnet.new_lpcnet_model(training=True, apply_softmax=False)
 student, _, _ = lpcnet.new_lpcnet_model(training=True, apply_softmax=False)
 model = lpcnet.new_lpcnet_distillation(teacher, student)
 
-temperature = 5
+temperature = 1
 hard_weight = .1
 
 def distillation_loss(y_true, y_pred):
@@ -65,6 +65,17 @@ def distillation_loss(y_true, y_pred):
     student = softmax(t_1*y_pred[:,:,256:])
     return K.categorical_crossentropy(teacher, student)
     #return temperature*temperature*K.categorical_crossentropy(teacher, student) + hard_weight*K.sparse_categorical_crossentropy(y_true, student)
+
+def distillation_metric(y_true, y_pred):
+    t_1 = 1./temperature
+    student = softmax(t_1*y_pred[:,:,256:])
+    return K.sparse_categorical_crossentropy(y_true, student)
+
+def distillation_metric_teacher(y_true, y_pred):
+    t_1 = 1./temperature
+    teacher = softmax(t_1*y_pred[:,:,:256])
+    return K.sparse_categorical_crossentropy(y_true, teacher)
+
 
 #model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['sparse_categorical_accuracy'])
 model.summary()
@@ -119,5 +130,5 @@ del in_exc
 checkpoint = ModelCheckpoint('lpcnet20s_384_10_G16_{epoch:02d}.h5')
 
 teacher.load_weights('lpcnet20h_384_10_G16_80.h5')
-model.compile(optimizer=Adam(0.0001, amsgrad=True, decay=5e-5), loss=distillation_loss)
-model.fit([in_data, features, periods], out_exc, batch_size=batch_size, epochs=nb_epochs, validation_split=0.0, callbacks=[checkpoint, lpcnet.Sparsify(100, 40000, 400, (0.05, 0.05, 0.2))])
+model.compile(optimizer=Adam(0.001, amsgrad=True, decay=5e-5), loss=distillation_loss, metrics=[distillation_metric, distillation_metric_teacher])
+model.fit([in_data, features, periods], out_exc, batch_size=batch_size, epochs=nb_epochs, validation_split=0.0, callbacks=[checkpoint, lpcnet.Sparsify(2000, 40000, 400, (0.05, 0.05, 0.2))])
