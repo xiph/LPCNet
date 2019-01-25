@@ -52,29 +52,28 @@ nb_epochs = 120
 # Try reducing batch_size if you run out of memory on your GPU
 batch_size = 64
 
-teacher, _, _ = lpcnet.new_lpcnet_model(training=True, apply_softmax=False)
+teacher, _, _ = lpcnet.new_lpcnet_model(rnn_units1=640, training=True, apply_softmax=False)
 student, _, _ = lpcnet.new_lpcnet_model(training=True, apply_softmax=False)
 model = lpcnet.new_lpcnet_distillation(teacher, student)
 
-temperature = 1
+temperature = 5
 hard_weight = .1
+
+def distillation_metric(y_true, y_pred):
+    student = softmax(y_pred[:,:,256:])
+    return K.sparse_categorical_crossentropy(y_true, student)
+
+def distillation_metric_teacher(y_true, y_pred):
+    teacher = softmax(y_pred[:,:,:256])
+    return K.sparse_categorical_crossentropy(y_true, teacher)
 
 def distillation_loss(y_true, y_pred):
     t_1 = 1./temperature
     teacher = softmax(t_1*y_pred[:,:,:256])
     student = softmax(t_1*y_pred[:,:,256:])
-    return K.categorical_crossentropy(teacher, student)
+    student1 = softmax(y_pred[:,:,256:])
+    return temperature*temperature*(K.categorical_crossentropy(teacher, student) - K.categorical_crossentropy(teacher, teacher)) + hard_weight*K.sparse_categorical_crossentropy(y_true, student1)
     #return temperature*temperature*K.categorical_crossentropy(teacher, student) + hard_weight*K.sparse_categorical_crossentropy(y_true, student)
-
-def distillation_metric(y_true, y_pred):
-    t_1 = 1./temperature
-    student = softmax(t_1*y_pred[:,:,256:])
-    return K.sparse_categorical_crossentropy(y_true, student)
-
-def distillation_metric_teacher(y_true, y_pred):
-    t_1 = 1./temperature
-    teacher = softmax(t_1*y_pred[:,:,:256])
-    return K.sparse_categorical_crossentropy(y_true, teacher)
 
 
 #model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['sparse_categorical_accuracy'])
@@ -127,8 +126,8 @@ del pred
 del in_exc
 
 # dump models to disk as we go
-checkpoint = ModelCheckpoint('lpcnet20s_384_10_G16_{epoch:02d}.h5')
+checkpoint = ModelCheckpoint('lpcnet20t5_384_10_G16_{epoch:02d}.h5')
 
-teacher.load_weights('lpcnet20h_384_10_G16_80.h5')
+teacher.load_weights('lpcnet20h_640_20_G16_29.h5')
 model.compile(optimizer=Adam(0.001, amsgrad=True, decay=5e-5), loss=distillation_loss, metrics=[distillation_metric, distillation_metric_teacher])
 model.fit([in_data, features, periods], out_exc, batch_size=batch_size, epochs=nb_epochs, validation_split=0.0, callbacks=[checkpoint, lpcnet.Sparsify(2000, 40000, 400, (0.05, 0.05, 0.2))])
