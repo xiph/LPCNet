@@ -58,7 +58,7 @@ class Sparsify(Callback):
             pass
         else:
             #print("constrain");
-            layer = self.model.get_layer('gru_a')
+            layer = self.model.get_layer('student').get_layer('gru_a')
             w = layer.get_weights()
             p = w[1]
             nb = p.shape[1]//p.shape[0]
@@ -113,7 +113,7 @@ class PCMInit(Initializer):
             'seed': self.seed
         }
 
-def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features = 38, temperature=1, training=False, use_gpu=True):
+def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features = 38, temperature=1, training=False, apply_softmax=True, use_gpu=True):
     pcm = Input(shape=(None, 3))
     feat = Input(shape=(None, nb_used_features))
     pitch = Input(shape=(None, 1))
@@ -153,7 +153,9 @@ def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features = 38, tempe
     temp = Lambda(lambda x: x*inv_temp)
     gru_out1, _ = rnn(rnn_in)
     gru_out2, _ = rnn2(Concatenate()([gru_out1, rep(cfeat)]))
-    ulaw_prob = Activation('softmax')(temp(md(gru_out2)))
+    ulaw_prob = temp(md(gru_out2))
+    if apply_softmax:
+        ulaw_prob = Activation('softmax')(ulaw_prob)
 
     model = Model([pcm, feat, pitch], ulaw_prob)
     model.rnn_units1 = rnn_units1
@@ -166,7 +168,29 @@ def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features = 38, tempe
     dec_rnn_in = Concatenate()([cpcm, dec_feat])
     dec_gru_out1, state1 = rnn(dec_rnn_in, initial_state=dec_state1)
     dec_gru_out2, state2 = rnn2(Concatenate()([dec_gru_out1, dec_feat]), initial_state=dec_state2)
-    dec_ulaw_prob = Activation('softmax')(temp(md(dec_gru_out2)))
+    dec_ulaw_prob = temp(md(dec_gru_out2))
+    if apply_softmax:
+        dec_ulaw_prob = Activation('softmax')(dec_ulaw_prob)
 
     decoder = Model([pcm, dec_feat, dec_state1, dec_state2], [dec_ulaw_prob, state1, state2])
     return model, encoder, decoder
+
+def new_lpcnet_distillation(teacher, student):
+    pcm = Input(shape=(None, 3))
+    feat = Input(shape=(None, teacher.nb_used_features))
+    pitch = Input(shape=(None, 1))
+
+    teacher.trainable = False
+    student.name = 'student'
+    teacher.name = 'teacher'
+    
+    teacher_out = teacher([pcm, feat, pitch])
+    student_out = student([pcm, feat, pitch])
+    out = Concatenate()([teacher_out, student_out])
+    
+    model = Model([pcm, feat, pitch], out)
+    model.frame_size = teacher.frame_size
+    model.rnn_units1 = teacher.rnn_units1
+    model.rnn_units2 = teacher.rnn_units2
+    model.nb_used_features = teacher.nb_used_features
+    return model

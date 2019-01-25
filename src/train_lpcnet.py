@@ -32,6 +32,7 @@ import sys
 import numpy as np
 from keras.optimizers import Adam
 from keras.callbacks import ModelCheckpoint
+from keras.activations import softmax
 from ulaw import ulaw2lin, lin2ulaw
 import keras.backend as K
 import h5py
@@ -42,7 +43,7 @@ config = tf.ConfigProto()
 
 # use this option to reserve GPU memory, e.g. for running more than
 # one thing at a time.  Best to disable for GPUs with small memory
-config.gpu_options.per_process_gpu_memory_fraction = 0.44
+config.gpu_options.per_process_gpu_memory_fraction = 0.6
 
 set_session(tf.Session(config=config))
 
@@ -51,9 +52,21 @@ nb_epochs = 120
 # Try reducing batch_size if you run out of memory on your GPU
 batch_size = 64
 
-model, _, _ = lpcnet.new_lpcnet_model(training=True)
+teacher, _, _ = lpcnet.new_lpcnet_model(training=True, apply_softmax=False)
+student, _, _ = lpcnet.new_lpcnet_model(training=True, apply_softmax=False)
+model = lpcnet.new_lpcnet_distillation(teacher, student)
 
-model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['sparse_categorical_accuracy'])
+temperature = 5
+hard_weight = .1
+
+def distillation_loss(y_true, y_pred):
+    t_1 = 1./temperature
+    teacher = softmax(t_1*y_pred[:,:,:256])
+    student = softmax(t_1*y_pred[:,:,256:])
+    return K.categorical_crossentropy(teacher, student)
+    #return temperature*temperature*K.categorical_crossentropy(teacher, student) + hard_weight*K.sparse_categorical_crossentropy(y_true, student)
+
+#model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['sparse_categorical_accuracy'])
 model.summary()
 
 feature_file = sys.argv[1]
@@ -103,8 +116,8 @@ del pred
 del in_exc
 
 # dump models to disk as we go
-checkpoint = ModelCheckpoint('lpcnet20h_384_10_G16_{epoch:02d}.h5')
+checkpoint = ModelCheckpoint('lpcnet20s_384_10_G16_{epoch:02d}.h5')
 
-#model.load_weights('lpcnet9b_384_10_G16_01.h5')
-model.compile(optimizer=Adam(0.001, amsgrad=True, decay=5e-5), loss='sparse_categorical_crossentropy')
-model.fit([in_data, features, periods], out_exc, batch_size=batch_size, epochs=nb_epochs, validation_split=0.0, callbacks=[checkpoint, lpcnet.Sparsify(2000, 40000, 400, (0.05, 0.05, 0.2))])
+teacher.load_weights('lpcnet20h_384_10_G16_80.h5')
+model.compile(optimizer=Adam(0.0001, amsgrad=True, decay=5e-5), loss=distillation_loss)
+model.fit([in_data, features, periods], out_exc, batch_size=batch_size, epochs=nb_epochs, validation_split=0.0, callbacks=[checkpoint, lpcnet.Sparsify(100, 40000, 400, (0.05, 0.05, 0.2))])

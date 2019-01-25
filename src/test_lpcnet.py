@@ -37,7 +37,7 @@ import h5py
 import tensorflow as tf
 from keras.backend.tensorflow_backend import set_session
 config = tf.ConfigProto()
-config.gpu_options.per_process_gpu_memory_fraction = 0.2
+#config.gpu_options.per_process_gpu_memory_fraction = 0.2
 set_session(tf.Session(config=config))
 
 model, enc, dec = lpcnet.new_lpcnet_model(use_gpu=False)
