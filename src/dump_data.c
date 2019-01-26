@@ -60,6 +60,7 @@ typedef struct {
   int last_period;
   float lpc[LPC_ORDER];
   float sig_mem[LPC_ORDER];
+  float noise_mem[LPC_ORDER];
   int exc_mem;
 } DenoiseState;
 
@@ -203,13 +204,22 @@ static void rand_resp(float *a, float *b) {
 void write_audio(DenoiseState *st, const short *pcm, float noise_std, FILE *file) {
   int i;
   unsigned char data[4*FRAME_SIZE];
+  float gamma = 0.9;
+  float tmp = 1.;
+  float W[LPC_ORDER];
+  for (i=0;i<LPC_ORDER;i++) {
+      tmp *= gamma;
+      W[i] = st->lpc[i]*tmp;
+  }
   for (i=0;i<FRAME_SIZE;i++) {
     int noise;
     float p=0;
+    float feedback=0;
     float e;
     int j;
     for (j=0;j<LPC_ORDER;j++) p -= st->lpc[j]*st->sig_mem[j];
-    e = lin2ulaw(pcm[i] - p);
+    for (j=0;j<LPC_ORDER;j++) feedback -= W[j]*st->noise_mem[j];
+    e = lin2ulaw(pcm[i] + feedback - p);
     /* Signal. */
     data[4*i] = lin2ulaw(st->sig_mem[0]);
     /* Prediction. */
@@ -225,6 +235,8 @@ void write_audio(DenoiseState *st, const short *pcm, float noise_std, FILE *file
     
     RNN_MOVE(&st->sig_mem[1], &st->sig_mem[0], LPC_ORDER-1);
     st->sig_mem[0] = p + ulaw2lin(e);
+    RNN_MOVE(&st->noise_mem[1], &st->noise_mem[0], LPC_ORDER-1);
+    st->noise_mem[0] = st->sig_mem[0] - pcm[i];
     st->exc_mem = e;
   }
   fwrite(data, 4*FRAME_SIZE, 1, file);
