@@ -40,28 +40,35 @@ int main(int argc, char **argv) {
         fprintf(stderr, "usage: test_lpcnet <features.f32> <output.pcm>\n");
         return 0;
     }
-    fin = fopen(argv[1], "rb");
-    if (fin == NULL) {
-	fprintf(stderr, "Can't open %s\n", argv[1]);
-	exit(1);
+    if (strcmp(argv[1], "-") == 0) fin = stdin;
+    else {
+        fin = fopen(argv[1], "rb");
+        if (fin == NULL) {
+            fprintf(stderr, "Can't open %s\n", argv[1]);
+            exit(1);
+        }
     }
-
-    fout = fopen(argv[2], "wb");
-    if (fout == NULL) {
-	fprintf(stderr, "Can't open %s\n", argv[2]);
-	exit(1);
+    
+    if (strcmp(argv[2], "-") == 0) fout = stdout;
+    else {
+        fout = fopen(argv[2], "wb");
+        if (fout == NULL) {
+            fprintf(stderr, "Can't open %s\n", argv[2]);
+            exit(1);
+        }
     }
 
     while (1) {
         float in_features[NB_TOTAL_FEATURES];
         float features[NB_FEATURES];
         short pcm[FRAME_SIZE];
-        fread(in_features, sizeof(features[0]), NB_TOTAL_FEATURES, fin);
-        if (feof(fin)) break;
+        int nread = fread(in_features, sizeof(features[0]), NB_TOTAL_FEATURES, fin);
+        if (nread != NB_TOTAL_FEATURES) break;
         RNN_COPY(features, in_features, NB_FEATURES);
         RNN_CLEAR(&features[18], 18);
         lpcnet_synthesize(net, pcm, features, FRAME_SIZE);
         fwrite(pcm, sizeof(pcm[0]), FRAME_SIZE, fout);
+        if (fout == stdout) fflush(stdout);
     }
     fclose(fin);
     fclose(fout);
