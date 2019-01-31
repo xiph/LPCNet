@@ -19,7 +19,7 @@ This software is an open source starting point for WaveRNN-based speech synthesi
 1. Generate training data:
    ```
    make dump_data
-   ./dump_data -train input.s16 features.f32 data.u8
+   ./dump_data --train input.s16 features.f32 data.u8
    ```
    where the first file contains 16 kHz 16-bit raw PCM audio (no header) and the other files are output files. This program makes several passes over the data with different filters to generate a large amount of training data.
 
@@ -32,7 +32,7 @@ This software is an open source starting point for WaveRNN-based speech synthesi
 
 1. You can synthesise speech with Python and your GPU card:
    ```
-   ./dump_data -test test_input.s16 test_features.f32
+   ./dump_data --test test_input.s16 test_features.f32
    ./test_lpcnet.py test_features.f32 test.s16
    ```
    Note the .h5 is hard coded in test_lpcnet.py, modify for your .h file.
@@ -45,7 +45,7 @@ This software is an open source starting point for WaveRNN-based speech synthesi
    Then you can make the C synthesiser and try synthesising from a test feature file:
    ```
    make test_lpcnet
-   ./dump_data -test test_input.s16 test_features.f32
+   ./dump_data --test test_input.s16 test_features.f32
    ./test_lpcnet test_features.f32 test.s16
    ```
  
