@@ -14,8 +14,8 @@ noinst_HEADERS = src/arch.h  \
 		 src/kiss_fft.h  \
 		 src/opus_types.h  \
 		 src/pitch.h  \
-		 src/rnn_data.h  \
-		 src/rnn.h  \
+		 src/nnet_data.h  \
+		 src/nnet.h  \
 		 src/tansig_table.h
 
 liblpcnet_la_SOURCES = \
@@ -39,7 +39,7 @@ if OP_ENABLE_EXAMPLES
 noinst_PROGRAMS = src/lpcnet_demo
 endif
 
-src_lpcnet_demo_SOURCES = examples/lpcnet_demo.c
+src_lpcnet_demo_SOURCES = src/lpcnet_demo.c
 src_lpcnet_demo_LDADD = liblpcnet.la
 
 pkgconfigdir = $(libdir)/pkgconfig
