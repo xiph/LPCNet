@@ -41,11 +41,11 @@ liblpcnet_la_LDFLAGS = -no-undefined \
  -version-info @OP_LT_CURRENT@:@OP_LT_REVISION@:@OP_LT_AGE@
 
 if OP_ENABLE_EXAMPLES
-noinst_PROGRAMS = src/lpcnet_demo
+noinst_PROGRAMS = lpcnet_demo
 endif
 
-src_lpcnet_demo_SOURCES = src/lpcnet_demo.c
-src_lpcnet_demo_LDADD = liblpcnet.la
+lpcnet_demo_SOURCES = src/lpcnet_demo.c
+lpcnet_demo_LDADD = liblpcnet.la
 
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = lpcnet.pc
