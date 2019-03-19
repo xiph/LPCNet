@@ -10,13 +10,18 @@ lib_LTLIBRARIES = liblpcnet.la
 noinst_HEADERS = src/arch.h  \
 		 src/celt_lpc.h  \
 		 src/common.h  \
+		 src/freq.h  \
 		 src/_kiss_fft_guts.h  \
 		 src/kiss_fft.h  \
+		 src/lpcnet_private.h \
 		 src/opus_types.h  \
-		 src/pitch.h  \
 		 src/nnet_data.h  \
 		 src/nnet.h  \
-		 src/tansig_table.h
+		 src/pitch.h  \
+		 src/tansig_table.h \
+		 src/vec.h \
+		 src/vec_avx.h \
+		 src/vec_neon.h
 
 liblpcnet_la_SOURCES = \
 	src/common.c \
