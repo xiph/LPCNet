@@ -103,10 +103,10 @@ del pred
 del in_exc
 
 # dump models to disk as we go
-checkpoint = ModelCheckpoint('lpcnet24g_384_10_G16_{epoch:02d}.h5')
+checkpoint = ModelCheckpoint('lpcnet25_384_10_G16_{epoch:02d}.h5')
 
 #Set this to True to adapt an existing model (e.g. on new data)
-adaptation = False
+adaptation = True
 
 if adaptation:
     #Adapting from an existing model

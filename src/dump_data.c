@@ -126,12 +126,15 @@ int main(int argc, char **argv) {
   FILE *f1;
   FILE *ffeat;
   FILE *fpcm=NULL;
+  FILE *fnoise=NULL;
   short pcm[FRAME_SIZE]={0};
   short pcmbuf[FRAME_SIZE*4]={0};
   int noisebuf[FRAME_SIZE*4]={0};
   short tmp[FRAME_SIZE] = {0};
+  short noise_data[FRAME_SIZE] = {0};
   float savedX[FRAME_SIZE] = {0};
   float speech_gain=1;
+  float noise_gain=0;
   int last_silent = 1;
   float old_speech_gain = 1;
   int one_pass_completed = 0;
@@ -199,6 +202,7 @@ int main(int argc, char **argv) {
       fprintf(stderr,"Error opening output PCM file: %s\n", argv[4]);
       exit(1);
     }
+    fnoise = fopen("noise_all_normalized.sw", "rb");
   }
   while (1) {
     float E=0;
@@ -235,6 +239,8 @@ int main(int argc, char **argv) {
       speech_gain = pow(10., (-20+(rand()%40))/20.);
       if (rand()%20==0) speech_gain *= .01;
       if (rand()%100==0) speech_gain = 0;
+      noise_gain = pow(10., (-25+(rand()%20))/20.);
+      if (rand()%5==0) noise_gain = 0;
       gain_change_count = 0;
       rand_resp(a_sig, b_sig);
       tmp = (float)rand()/RAND_MAX;
@@ -243,6 +249,14 @@ int main(int argc, char **argv) {
     biquad(x, mem_hp_x, x, b_hp, a_hp, FRAME_SIZE);
     biquad(x, mem_resp_x, x, b_sig, a_sig, FRAME_SIZE);
     preemphasis(x, &mem_preemph, x, PREEMPHASIS, FRAME_SIZE);
+    if (1) {
+      fread(noise_data, sizeof(short), FRAME_SIZE, fnoise);
+      if (feof(fnoise)) {
+        rewind(fnoise);
+        fread(noise_data, sizeof(short), FRAME_SIZE, fnoise);
+      }
+      for (i=0;i<FRAME_SIZE;i++) x[i] += noise_data[i]*noise_gain;
+    }
     for (i=0;i<FRAME_SIZE;i++) {
       float g;
       float f = (float)i/FRAME_SIZE;
@@ -266,6 +280,7 @@ int main(int argc, char **argv) {
       if (fpcm) write_audio(st, pcmbuf, noisebuf, fpcm);
       st->pcount = 0;
     }
+    //fwrite(pcm, sizeof(short), FRAME_SIZE, stdout);
     //if (fpcm) fwrite(pcm, sizeof(short), FRAME_SIZE, fpcm);
     for (i=0;i<TRAINING_OFFSET;i++) pcm[i] = float2short(x[i+FRAME_SIZE-TRAINING_OFFSET]);
     old_speech_gain = speech_gain;
