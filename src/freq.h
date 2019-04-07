@@ -43,6 +43,10 @@
 #define NB_BANDS 18
 #define NB_BANDS_1 (NB_BANDS - 1)
 
+#define SQUARE(x) ((x)*(x))
+
+extern const opus_int16 eband5ms[];
+
 void compute_band_energy(float *bandE, const kiss_fft_cpx *X);
 void compute_band_corr(float *bandE, const kiss_fft_cpx *X, const kiss_fft_cpx *P);
 

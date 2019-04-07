@@ -41,6 +41,49 @@
 #include <assert.h>
 #include "lpcnet.h"
 #include "lpcnet_private.h"
+#include "opus.h"
+
+void compute_band_energy_from_lpc(float *bandE, float g, const float *lpc) {
+  int i;
+  float sum[NB_BANDS] = {0};
+  float x[WINDOW_SIZE];
+  kiss_fft_cpx X[FREQ_SIZE];
+  {
+      RNN_CLEAR(x, WINDOW_SIZE);
+      x[0] = 1;
+      for (i=0;i<LPC_ORDER;i++) x[i+1] = -lpc[i];
+      forward_transform(X, x);
+  }
+#if 0
+  for (i=0;i<FREQ_SIZE;i++) {
+      float E = SQUARE(X[i].r) + SQUARE(X[i].i);
+      printf("%g ", 1.f/(1e-15+E));
+  }
+  printf("\n");
+#endif
+  for (i=0;i<NB_BANDS-1;i++)
+  {
+    int j;
+    int band_size;
+    band_size = (eband5ms[i+1]-eband5ms[i])*WINDOW_SIZE_5MS;
+    for (j=0;j<band_size;j++) {
+      float tmp;
+      float frac = (float)j/band_size;
+      tmp = SQUARE(X[(eband5ms[i]*WINDOW_SIZE_5MS) + j].r);
+      tmp += SQUARE(X[(eband5ms[i]*WINDOW_SIZE_5MS) + j].i);
+      tmp = 1.f/(tmp + 1e-9);
+      sum[i] += (1-frac)*tmp;
+      sum[i+1] += frac*tmp;
+    }
+  }
+  sum[0] *= 2;
+  sum[NB_BANDS-1] *= 2;
+  for (i=0;i<NB_BANDS;i++)
+  {
+    bandE[i] = sum[i];
+  }
+  for (i=0;i<NB_BANDS;i++) bandE[i] *= g*g*(1.f/((float)WINDOW_SIZE*WINDOW_SIZE*WINDOW_SIZE*WINDOW_SIZE));
+}
 
 
 static void biquad(float *y, float mem[2], const float *x, const float *b, const float *a, int N) {
@@ -141,6 +184,12 @@ int main(int argc, char **argv) {
   int encode = 0;
   int decode = 0;
   int quantize = 0;
+  OpusEncoder *enc;
+  OpusDecoder *dec;
+  enc = opus_encoder_create(16000, 1, OPUS_APPLICATION_VOIP, NULL);
+  opus_encoder_ctl(enc, OPUS_SET_BITRATE(6000));
+  opus_encoder_ctl(enc, OPUS_SET_BANDWIDTH(OPUS_BANDWIDTH_WIDEBAND));
+  dec = opus_decoder_create(16000, 1, NULL);
   st = lpcnet_encoder_create();
   if (argc == 5 && strcmp(argv[1], "-train")==0) training = 1;
   if (argc == 5 && strcmp(argv[1], "-qtrain")==0) {
@@ -255,6 +304,36 @@ int main(int argc, char **argv) {
     compute_frame_features(st, x);
 
     RNN_COPY(&pcmbuf[st->pcount*FRAME_SIZE], pcm, FRAME_SIZE);
+    if (st->pcount == 1 || st->pcount == 3) {
+        unsigned char bytes[100];
+        short pcm_dec[320];
+        float data[4][19];
+        float bandE[4][NB_BANDS];
+        int nb_bytes;
+        int nb_samples;
+        int pick;
+        nb_bytes = opus_encode(enc, &pcmbuf[(st->pcount-1)*FRAME_SIZE], 320, bytes, 100);
+        nb_samples = opus_decode(dec, bytes, nb_bytes, pcm_dec, 320, 0);
+        if (nb_samples != 320) break;
+        get_fdump(data);
+        for (i=0;i<4;i++) compute_band_energy_from_lpc(bandE[i], data[i][18], data[i]);
+        for (i=0;i<NB_BANDS;i++) bandE[0][i] = log10(1e-2+.5*bandE[0][i]+.5*bandE[1][i]);
+        for (i=0;i<NB_BANDS;i++) bandE[2][i] = log10(1e-2+.5*bandE[2][i]+.5*bandE[3][i]);
+        //for (i=0;i<38;i++) printf("%f ", st->features[st->pcount-1][i]);
+        dct(st->features[st->pcount-1], bandE[0]);
+        dct(st->features[st->pcount]  , bandE[2]);
+        st->features[st->pcount-1][0] -= 4;
+        st->features[st->pcount][0] -= 4;
+        pick = data[0][17] > data[1][17] ? 0 : 1;
+        st->features[st->pcount-1][36] = .02*(data[pick][16] - 100);
+        st->features[st->pcount-1][37] = data[pick][17] - .5;
+        pick = data[2][17] > data[3][17] ? 2 : 3;
+        st->features[st->pcount][36] = .02*(data[pick][16] - 100);
+        st->features[st->pcount][37] = data[pick][17] - .5;
+        //for (i=0;i<38;i++) printf("%f ", st->features[st->pcount-1][i]);
+        //for (i=0;i<38;i++) printf("%f ", st->features[st->pcount][i]);
+        //printf("%f %f %f %f %f\n", st->features[st->pcount-1][37], data[1][16], data[3][16], 100+50*st->features[st->pcount-1][36], 100+50*st->features[st->pcount][36]);
+    }
     if (fpcm) {
         compute_noise(&noisebuf[st->pcount*FRAME_SIZE], noise_std);
     }
