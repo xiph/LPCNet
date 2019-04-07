@@ -43,6 +43,8 @@
 #include "lpcnet_private.h"
 #include "opus.h"
 
+float preemph_offset[NB_BANDS] = {1.772676, 2.937053, 0.278042, 0.299267, 0.126341, 0.060082, 0.019509, -0.017281, 0.000530, -0.000156, -0.007375, -0.010533, -0.002903, -0.005244, -0.003251, -0.000492, -0.000174, -0.004998};
+
 void compute_band_energy_from_lpc(float *bandE, float g, const float *lpc) {
   int i;
   float sum[NB_BANDS] = {0};
@@ -51,6 +53,7 @@ void compute_band_energy_from_lpc(float *bandE, float g, const float *lpc) {
   {
       RNN_CLEAR(x, WINDOW_SIZE);
       x[0] = 1;
+      //x[1] = -PREEMPHASIS;
       for (i=0;i<LPC_ORDER;i++) x[i+1] = -lpc[i];
       forward_transform(X, x);
   }
@@ -171,6 +174,7 @@ int main(int argc, char **argv) {
   FILE *fpcm=NULL;
   short pcm[FRAME_SIZE]={0};
   short pcmbuf[FRAME_SIZE*4]={0};
+  float xbuf[FRAME_SIZE*4]={0};
   int noisebuf[FRAME_SIZE*4]={0};
   short tmp[FRAME_SIZE] = {0};
   float savedX[FRAME_SIZE] = {0};
@@ -291,13 +295,15 @@ int main(int argc, char **argv) {
     }
     biquad(x, mem_hp_x, x, b_hp, a_hp, FRAME_SIZE);
     biquad(x, mem_resp_x, x, b_sig, a_sig, FRAME_SIZE);
-    preemphasis(x, &mem_preemph, x, PREEMPHASIS, FRAME_SIZE);
     for (i=0;i<FRAME_SIZE;i++) {
       float g;
       float f = (float)i/FRAME_SIZE;
       g = f*speech_gain + (1-f)*old_speech_gain;
       x[i] *= g;
     }
+    for (i=0;i<FRAME_SIZE;i++)
+        xbuf[st->pcount*FRAME_SIZE + i] = (1.f/32768.f)*x[i];
+    preemphasis(x, &mem_preemph, x, PREEMPHASIS, FRAME_SIZE);
     for (i=0;i<FRAME_SIZE;i++) x[i] += rand()/(float)RAND_MAX - .5;
     /* PCM is delayed by 1/2 frame to make the features centered on the frames. */
     for (i=0;i<FRAME_SIZE-TRAINING_OFFSET;i++) pcm[i+TRAINING_OFFSET] = float2short(x[i]);
@@ -312,7 +318,7 @@ int main(int argc, char **argv) {
         int nb_bytes;
         int nb_samples;
         int pick;
-        nb_bytes = opus_encode(enc, &pcmbuf[(st->pcount-1)*FRAME_SIZE], 320, bytes, 100);
+        nb_bytes = opus_encode_float(enc, &xbuf[(st->pcount-1)*FRAME_SIZE], 320, bytes, 100);
         nb_samples = opus_decode(dec, bytes, nb_bytes, pcm_dec, 320, 0);
         if (nb_samples != 320) break;
         get_fdump(data);
@@ -324,6 +330,8 @@ int main(int argc, char **argv) {
         dct(st->features[st->pcount]  , bandE[2]);
         st->features[st->pcount-1][0] -= 4;
         st->features[st->pcount][0] -= 4;
+        for (i=0;i<NB_BANDS;i++) st->features[st->pcount-1][i] -= preemph_offset[i];
+        for (i=0;i<NB_BANDS;i++) st->features[st->pcount][i] -= preemph_offset[i];
         pick = data[0][17] > data[1][17] ? 0 : 1;
         st->features[st->pcount-1][36] = .02*(data[pick][16] - 100);
         st->features[st->pcount-1][37] = data[pick][17] - .5;
