@@ -325,7 +325,7 @@ int main(int argc, char **argv) {
         for (i=0;i<4;i++) compute_band_energy_from_lpc(bandE[i], data[i][18], data[i]);
         for (i=0;i<NB_BANDS;i++) bandE[0][i] = log10(1e-2+.5*bandE[0][i]+.5*bandE[1][i]);
         for (i=0;i<NB_BANDS;i++) bandE[2][i] = log10(1e-2+.5*bandE[2][i]+.5*bandE[3][i]);
-        //for (i=0;i<38;i++) printf("%f ", st->features[st->pcount-1][i]);
+        //for (i=0;i<55;i++) printf("%f ", st->features[st->pcount-1][i]);
         dct(st->features[st->pcount-1], bandE[0]);
         dct(st->features[st->pcount]  , bandE[2]);
         st->features[st->pcount-1][0] -= 4;
@@ -338,8 +338,11 @@ int main(int argc, char **argv) {
         pick = data[2][17] > data[3][17] ? 2 : 3;
         st->features[st->pcount][36] = .02*(data[pick][16] - 100);
         st->features[st->pcount][37] = data[pick][17] - .5;
-        //for (i=0;i<38;i++) printf("%f ", st->features[st->pcount-1][i]);
-        //for (i=0;i<38;i++) printf("%f ", st->features[st->pcount][i]);
+        
+        lpc_from_cepstrum(&st->features[st->pcount-1][2*NB_BANDS+3], st->features[st->pcount-1]);
+        lpc_from_cepstrum(&st->features[st->pcount][2*NB_BANDS+3], st->features[st->pcount]);
+        //for (i=0;i<55;i++) printf("%f ", st->features[st->pcount-1][i]);
+        //for (i=0;i<55;i++) printf("%f ", st->features[st->pcount][i]);
         //printf("%f %f %f %f %f\n", st->features[st->pcount-1][37], data[1][16], data[3][16], 100+50*st->features[st->pcount-1][36], 100+50*st->features[st->pcount][36]);
     }
     if (fpcm) {
