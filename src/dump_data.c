@@ -187,12 +187,15 @@ int main(int argc, char **argv) {
   int training = -1;
   int encode = 0;
   int decode = 0;
+  int delay = TRAINING_OFFSET;
   int quantize = 0;
   OpusEncoder *enc;
   OpusDecoder *dec;
   enc = opus_encoder_create(16000, 1, OPUS_APPLICATION_VOIP, NULL);
   opus_encoder_ctl(enc, OPUS_SET_BITRATE(6000));
   opus_encoder_ctl(enc, OPUS_SET_BANDWIDTH(OPUS_BANDWIDTH_WIDEBAND));
+  opus_encoder_ctl(enc, OPUS_GET_LOOKAHEAD(&delay));
+  fprintf(stderr, "delay is %d\n", delay);
   dec = opus_decoder_create(16000, 1, NULL);
   st = lpcnet_encoder_create();
   if (argc == 5 && strcmp(argv[1], "-train")==0) training = 1;
@@ -306,7 +309,7 @@ int main(int argc, char **argv) {
     preemphasis(x, &mem_preemph, x, PREEMPHASIS, FRAME_SIZE);
     for (i=0;i<FRAME_SIZE;i++) x[i] += rand()/(float)RAND_MAX - .5;
     /* PCM is delayed by 1/2 frame to make the features centered on the frames. */
-    for (i=0;i<FRAME_SIZE-TRAINING_OFFSET;i++) pcm[i+TRAINING_OFFSET] = float2short(x[i]);
+    for (i=0;i<FRAME_SIZE-delay;i++) pcm[i+delay] = float2short(x[i]);
     compute_frame_features(st, x);
 
     RNN_COPY(&pcmbuf[st->pcount*FRAME_SIZE], pcm, FRAME_SIZE);
@@ -338,7 +341,7 @@ int main(int argc, char **argv) {
         pick = data[2][17] > data[3][17] ? 2 : 3;
         st->features[st->pcount][36] = .02*(data[pick][16] - 100);
         st->features[st->pcount][37] = data[pick][17] - .5;
-        
+
         lpc_from_cepstrum(&st->features[st->pcount-1][2*NB_BANDS+3], st->features[st->pcount-1]);
         lpc_from_cepstrum(&st->features[st->pcount][2*NB_BANDS+3], st->features[st->pcount]);
         //for (i=0;i<55;i++) printf("%f ", st->features[st->pcount-1][i]);
@@ -351,13 +354,21 @@ int main(int argc, char **argv) {
     st->pcount++;
     /* Running on groups of 4 frames. */
     if (st->pcount == 4) {
+#if 0
       unsigned char buf[8];
       process_superframe(st, buf, ffeat, encode, quantize);
-      if (fpcm) write_audio(st, pcmbuf, noisebuf, fpcm);
+#else
+    if (ffeat) {
+      for (i=0;i<4;i++) {
+        fwrite(st->features[i], sizeof(float), NB_TOTAL_FEATURES, ffeat);
+      }
+    }
+#endif
+    if (fpcm) write_audio(st, pcmbuf, noisebuf, fpcm);
       st->pcount = 0;
     }
     //if (fpcm) fwrite(pcm, sizeof(short), FRAME_SIZE, fpcm);
-    for (i=0;i<TRAINING_OFFSET;i++) pcm[i] = float2short(x[i+FRAME_SIZE-TRAINING_OFFSET]);
+    for (i=0;i<delay;i++) pcm[i] = float2short(x[i+FRAME_SIZE-delay]);
     old_speech_gain = speech_gain;
     count++;
   }
