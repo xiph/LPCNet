@@ -129,7 +129,7 @@ LPCNET_EXPORT void lpcnet_synthesize(LPCNetState *lpcnet, const float *features,
     int pitch;
     float pitch_gain;
     /* Matches the Python code -- the 0.1 avoids rounding issues. */
-    pitch = (int)floor(.1 + 50*features[36]+100);
+    pitch = IMIN(255, (int)floor(.1 + 50*features[36]+100));
     pitch_gain = lpcnet->old_gain[FEATURES_DELAY-1];
     memmove(&lpcnet->old_gain[1], &lpcnet->old_gain[0], (FEATURES_DELAY-1)*sizeof(lpcnet->old_gain[0]));
     lpcnet->old_gain[0] = features[PITCH_GAIN_FEATURE];

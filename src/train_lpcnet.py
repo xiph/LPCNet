@@ -95,6 +95,7 @@ features = np.concatenate([fpad1, features, fpad2], axis=1)
 
 
 periods = (.1 + 50*features[:,:,36:37]+100).astype('int16')
+periods = np.minimum(periods, 255);
 
 in_data = np.concatenate([sig, pred, in_exc], axis=-1)
 
@@ -103,7 +104,7 @@ del pred
 del in_exc
 
 # dump models to disk as we go
-checkpoint = ModelCheckpoint('lpcnet24g_384_10_G16_{epoch:02d}.h5')
+checkpoint = ModelCheckpoint('lpcnet27a_384_10_G16_{epoch:02d}.h5')
 
 #Set this to True to adapt an existing model (e.g. on new data)
 adaptation = False
@@ -121,4 +122,5 @@ else:
     decay = 5e-5
 
 model.compile(optimizer=Adam(lr, amsgrad=True, decay=decay), loss='sparse_categorical_crossentropy')
+model.save_weights('lpcnet27a_384_10_G16_00.h5');
 model.fit([in_data, features, periods], out_exc, batch_size=batch_size, epochs=nb_epochs, validation_split=0.0, callbacks=[checkpoint, sparsify])
