@@ -87,7 +87,7 @@ print("ulaw std = ", np.std(out_exc))
 
 features = np.reshape(features, (nb_frames, feature_chunk_size, nb_features))
 features = features[:, :, :nb_used_features]
-features[:,:,18:36] = 0
+#features[:,:,18:36] = 0
 
 fpad1 = np.concatenate([features[0:1, 0:2, :], features[:-1, -2:, :]], axis=0)
 fpad2 = np.concatenate([features[1:, :2, :], features[0:1, -2:, :]], axis=0)
@@ -104,7 +104,7 @@ del pred
 del in_exc
 
 # dump models to disk as we go
-checkpoint = ModelCheckpoint('lpcnet27a_384_10_G16_{epoch:02d}.h5')
+checkpoint = ModelCheckpoint('lpcnet27b_384_10_G16_{epoch:02d}.h5')
 
 #Set this to True to adapt an existing model (e.g. on new data)
 adaptation = False
@@ -122,5 +122,5 @@ else:
     decay = 5e-5
 
 model.compile(optimizer=Adam(lr, amsgrad=True, decay=decay), loss='sparse_categorical_crossentropy')
-model.save_weights('lpcnet27a_384_10_G16_00.h5');
+model.save_weights('lpcnet27b_384_10_G16_00.h5');
 model.fit([in_data, features, periods], out_exc, batch_size=batch_size, epochs=nb_epochs, validation_split=0.0, callbacks=[checkpoint, sparsify])

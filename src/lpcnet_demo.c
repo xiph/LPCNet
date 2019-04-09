@@ -109,13 +109,15 @@ int main(int argc, char **argv) {
         LPCNetState *net;
         net = lpcnet_create();
         while (1) {
+            int i;
             float in_features[NB_TOTAL_FEATURES];
             float features[NB_FEATURES];
             short pcm[LPCNET_FRAME_SIZE];
             fread(in_features, sizeof(features[0]), NB_TOTAL_FEATURES, fin);
             if (feof(fin)) break;
             RNN_COPY(features, in_features, NB_FEATURES);
-            RNN_CLEAR(&features[18], 18);
+            //for (i=0;i<16;i++) printf("%f ", in_features[NB_TOTAL_FEATURES-16+i]);
+            //RNN_CLEAR(&features[18], 18);
             lpcnet_synthesize(net, features, pcm, LPCNET_FRAME_SIZE);
             fwrite(pcm, sizeof(pcm[0]), LPCNET_FRAME_SIZE, fout);
         }
