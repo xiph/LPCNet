@@ -129,6 +129,7 @@ void write_audio(LPCNetEncState *st, const short *pcm, const int *noise, FILE *f
     float e;
     int j;
     for (j=0;j<LPC_ORDER;j++) p -= st->features[k][2*NB_BANDS+3+j]*st->sig_mem[j];
+    //printf("%f\n", pcm[k*FRAME_SIZE+i] - p);
     e = lin2ulaw(pcm[k*FRAME_SIZE+i] - p);
     /* Signal. */
     data[4*i] = lin2ulaw(st->sig_mem[0]);
@@ -195,6 +196,7 @@ int main(int argc, char **argv) {
   opus_encoder_ctl(enc, OPUS_SET_BITRATE(6000));
   opus_encoder_ctl(enc, OPUS_SET_BANDWIDTH(OPUS_BANDWIDTH_WIDEBAND));
   opus_encoder_ctl(enc, OPUS_GET_LOOKAHEAD(&delay));
+  delay = 160;
   fprintf(stderr, "delay is %d\n", delay);
   dec = opus_decoder_create(16000, 1, NULL);
   st = lpcnet_encoder_create();
@@ -310,31 +312,37 @@ int main(int argc, char **argv) {
     for (i=0;i<FRAME_SIZE;i++) x[i] += rand()/(float)RAND_MAX - .5;
     /* PCM is delayed by 1/2 frame to make the features centered on the frames. */
     for (i=0;i<FRAME_SIZE-delay;i++) pcm[i+delay] = float2short(x[i]);
-    compute_frame_features(st, x);
+    //compute_frame_features(st, x);
 
     RNN_COPY(&pcmbuf[st->pcount*FRAME_SIZE], pcm, FRAME_SIZE);
     if (st->pcount == 1 || st->pcount == 3) {
         unsigned char bytes[100];
-        short pcm_dec[320];
+        float pcm_dec[320];
         float data[4][19];
         float bandE[4][NB_BANDS];
         int nb_bytes;
         int nb_samples;
         int pick;
+        static float mem_preemph2 = 0;
         nb_bytes = opus_encode_float(enc, &xbuf[(st->pcount-1)*FRAME_SIZE], 320, bytes, 100);
-        nb_samples = opus_decode(dec, bytes, nb_bytes, pcm_dec, 320, 0);
+        nb_samples = opus_decode_float(dec, bytes, nb_bytes, pcm_dec, 320, 0);
+        preemphasis(pcm_dec, &mem_preemph2, pcm_dec, PREEMPHASIS, 2*FRAME_SIZE);
         if (nb_samples != 320) break;
+        for (i=0;i<320;i++) pcm_dec[i] *= 32768;
+        st->pcount--;
+        compute_frame_features(st, pcm_dec);
+        st->pcount++;
+        compute_frame_features(st, pcm_dec+160);
         get_fdump(data);
+#if 1
         for (i=0;i<4;i++) compute_band_energy_from_lpc(bandE[i], data[i][18], data[i]);
-        for (i=0;i<NB_BANDS;i++) bandE[0][i] = log10(1e-2+.5*bandE[0][i]+.5*bandE[1][i]);
-        for (i=0;i<NB_BANDS;i++) bandE[2][i] = log10(1e-2+.5*bandE[2][i]+.5*bandE[3][i]);
-        //for (i=0;i<55;i++) printf("%f ", st->features[st->pcount-1][i]);
-        dct(st->features[st->pcount-1], bandE[0]);
-        dct(st->features[st->pcount]  , bandE[2]);
-        st->features[st->pcount-1][0] -= 4;
-        st->features[st->pcount][0] -= 4;
-        for (i=0;i<NB_BANDS;i++) st->features[st->pcount-1][i] -= preemph_offset[i];
-        for (i=0;i<NB_BANDS;i++) st->features[st->pcount][i] -= preemph_offset[i];
+        for (i=0;i<NB_BANDS;i++) bandE[0][i] = log10(1e-2+bandE[0][i]+bandE[1][i]);
+        for (i=0;i<NB_BANDS;i++) bandE[2][i] = log10(1e-2+bandE[2][i]+bandE[3][i]);
+        dct(&st->features[st->pcount-1][NB_BANDS], bandE[0]);
+        dct(&st->features[st->pcount][NB_BANDS]  , bandE[2]);
+        st->features[st->pcount-1][NB_BANDS] -= 4;
+        st->features[st->pcount][NB_BANDS] -= 4;
+#endif
         pick = data[0][17] > data[1][17] ? 0 : 1;
         st->features[st->pcount-1][36] = .02*(data[pick][16] - 100);
         st->features[st->pcount-1][37] = data[pick][17] - .5;
@@ -342,10 +350,11 @@ int main(int argc, char **argv) {
         st->features[st->pcount][36] = .02*(data[pick][16] - 100);
         st->features[st->pcount][37] = data[pick][17] - .5;
 
-        lpc_from_cepstrum(&st->features[st->pcount-1][2*NB_BANDS+3], st->features[st->pcount-1]);
-        lpc_from_cepstrum(&st->features[st->pcount][2*NB_BANDS+3], st->features[st->pcount]);
+        //lpc_from_cepstrum(&st->features[st->pcount-1][2*NB_BANDS+3], st->features[st->pcount-1]);
+        //lpc_from_cepstrum(&st->features[st->pcount][2*NB_BANDS+3], st->features[st->pcount]);
         //for (i=0;i<55;i++) printf("%f ", st->features[st->pcount-1][i]);
         //for (i=0;i<55;i++) printf("%f ", st->features[st->pcount][i]);
+        //printf("\n");
         //printf("%f %f %f %f %f\n", st->features[st->pcount-1][37], data[1][16], data[3][16], 100+50*st->features[st->pcount-1][36], 100+50*st->features[st->pcount][36]);
     }
     if (fpcm) {
