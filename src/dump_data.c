@@ -196,7 +196,7 @@ int main(int argc, char **argv) {
   opus_encoder_ctl(enc, OPUS_SET_BITRATE(6000));
   opus_encoder_ctl(enc, OPUS_SET_BANDWIDTH(OPUS_BANDWIDTH_WIDEBAND));
   opus_encoder_ctl(enc, OPUS_GET_LOOKAHEAD(&delay));
-  delay = 160;
+  delay = 92+40;
   fprintf(stderr, "delay is %d\n", delay);
   dec = opus_decoder_create(16000, 1, NULL);
   st = lpcnet_encoder_create();
@@ -350,6 +350,9 @@ int main(int argc, char **argv) {
         st->features[st->pcount][36] = .02*(data[pick][16] - 100);
         st->features[st->pcount][37] = data[pick][17] - .5;
 
+        for (i=0;i<16;i++) st->features[st->pcount-1][39+i] = -data[0][i];
+        for (i=0;i<16;i++) st->features[st->pcount][39+i] = -data[2][i];
+
         //lpc_from_cepstrum(&st->features[st->pcount-1][2*NB_BANDS+3], st->features[st->pcount-1]);
         //lpc_from_cepstrum(&st->features[st->pcount][2*NB_BANDS+3], st->features[st->pcount]);
         //for (i=0;i<55;i++) printf("%f ", st->features[st->pcount-1][i]);
@@ -375,12 +378,14 @@ int main(int argc, char **argv) {
         else st->features[i][36] = last_pitch;
       }
       last_pitch = st->features[3][36];
+#if 0
       RNN_COPY(ftemp, &st->features[3][0], 55);
       for (i=3;i>=1;i--) {
           RNN_COPY(&st->features[i][NB_BANDS], &st->features[i-1][NB_BANDS], NB_BANDS+2);
       }
       RNN_COPY(&st->features[0][NB_BANDS], &fmem[NB_BANDS], NB_BANDS+2);
       RNN_COPY(fmem, ftemp, 55);
+#endif
       for (i=0;i<4;i++) {
           int j;
           for (j=0;j<NB_BANDS;j++) st->features[i][NB_BANDS+j] -= st->features[i][j];
