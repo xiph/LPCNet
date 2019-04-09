@@ -85,7 +85,7 @@ void compute_band_energy_from_lpc(float *bandE, float g, const float *lpc) {
   {
     bandE[i] = sum[i];
   }
-  for (i=0;i<NB_BANDS;i++) bandE[i] *= g*g*(1.f/((float)WINDOW_SIZE*WINDOW_SIZE*WINDOW_SIZE*WINDOW_SIZE));
+  for (i=0;i<NB_BANDS;i++) bandE[i] *= .2*g*g*(1.f/((float)WINDOW_SIZE*WINDOW_SIZE*WINDOW_SIZE*WINDOW_SIZE));
 }
 
 
@@ -367,10 +367,28 @@ int main(int argc, char **argv) {
       unsigned char buf[8];
       process_superframe(st, buf, ffeat, encode, quantize);
 #else
-    if (ffeat) {
-      for (i=0;i<4;i++) {
-        fwrite(st->features[i], sizeof(float), NB_TOTAL_FEATURES, ffeat);
+      float ftemp[55];
+      static float fmem[55] = {0};
+      static float last_pitch = 0;
+      for (i=3;i>=0;i--) {
+        if (st->features[i][36] > -1.99) last_pitch = st->features[i][36];
+        else st->features[i][36] = last_pitch;
       }
+      last_pitch = st->features[3][36];
+      RNN_COPY(ftemp, &st->features[3][0], 55);
+      for (i=3;i>=1;i--) {
+          RNN_COPY(&st->features[i][NB_BANDS], &st->features[i-1][NB_BANDS], NB_BANDS+2);
+      }
+      RNN_COPY(&st->features[0][NB_BANDS], &fmem[NB_BANDS], NB_BANDS+2);
+      RNN_COPY(fmem, ftemp, 55);
+      for (i=0;i<4;i++) {
+          int j;
+          for (j=0;j<NB_BANDS;j++) st->features[i][NB_BANDS+j] -= st->features[i][j];
+      }
+      if (ffeat) {
+        for (i=0;i<4;i++) {
+          fwrite(st->features[i], sizeof(float), NB_TOTAL_FEATURES, ffeat);
+        }
     }
 #endif
     if (fpcm) write_audio(st, pcmbuf, noisebuf, fpcm);
