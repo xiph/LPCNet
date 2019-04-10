@@ -122,6 +122,8 @@ void compute_noise(int *noise, float noise_std) {
 
 void write_audio(LPCNetEncState *st, const short *pcm, const int *noise, FILE *file) {
   int i, k;
+  fwrite(pcm, 4*FRAME_SIZE, 2, file);
+  return;
   for (k=0;k<4;k++) {
   unsigned char data[4*FRAME_SIZE];
   for (i=0;i<FRAME_SIZE;i++) {
@@ -147,7 +149,7 @@ void write_audio(LPCNetEncState *st, const short *pcm, const int *noise, FILE *f
     st->sig_mem[0] = p + ulaw2lin(e);
     st->exc_mem = e;
   }
-  fwrite(data, 4*FRAME_SIZE, 1, file);
+  //fwrite(data, 4*FRAME_SIZE, 1, file);
   }
 }
 
@@ -196,7 +198,7 @@ int main(int argc, char **argv) {
   opus_encoder_ctl(enc, OPUS_SET_BITRATE(6000));
   opus_encoder_ctl(enc, OPUS_SET_BANDWIDTH(OPUS_BANDWIDTH_WIDEBAND));
   opus_encoder_ctl(enc, OPUS_GET_LOOKAHEAD(&delay));
-  delay = 92+40;
+  delay = 160;
   fprintf(stderr, "delay is %d\n", delay);
   dec = opus_decoder_create(16000, 1, NULL);
   st = lpcnet_encoder_create();
@@ -308,7 +310,7 @@ int main(int argc, char **argv) {
     }
     for (i=0;i<FRAME_SIZE;i++)
         xbuf[st->pcount*FRAME_SIZE + i] = (1.f/32768.f)*x[i];
-    preemphasis(x, &mem_preemph, x, PREEMPHASIS, FRAME_SIZE);
+    //preemphasis(x, &mem_preemph, x, PREEMPHASIS, FRAME_SIZE);
     for (i=0;i<FRAME_SIZE;i++) x[i] += rand()/(float)RAND_MAX - .5;
     /* PCM is delayed by 1/2 frame to make the features centered on the frames. */
     for (i=0;i<FRAME_SIZE-delay;i++) pcm[i+delay] = float2short(x[i]);
@@ -392,7 +394,7 @@ int main(int argc, char **argv) {
       }
       if (ffeat) {
         for (i=0;i<4;i++) {
-          fwrite(st->features[i], sizeof(float), NB_TOTAL_FEATURES, ffeat);
+          fwrite(st->features[i], sizeof(float), 38, ffeat);
         }
     }
 #endif
