@@ -51,7 +51,7 @@ nb_epochs = 120
 # Try reducing batch_size if you run out of memory on your GPU
 batch_size = 64
 
-model, _, _ = lpcnet.new_lpcnet_model(training=True)
+model, _, _ = lpcnet.new_lpcnet_model(training=True, adaptation=True)
 
 model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['sparse_categorical_accuracy'])
 model.summary()
@@ -104,14 +104,14 @@ del pred
 del in_exc
 
 # dump models to disk as we go
-checkpoint = ModelCheckpoint('lpcnet28na_384_10_G16_{epoch:02d}.h5')
+checkpoint = ModelCheckpoint('lpcnet31ap_384_10_G16_{epoch:02d}.h5')
 
 #Set this to True to adapt an existing model (e.g. on new data)
 adaptation = True
 
 if adaptation:
     #Adapting from an existing model
-    model.load_weights('lpcnet24c_384_10_G16_120.h5')
+    model.load_weights('lpcnet30a_384_10_G16_21.h5')
     sparsify = lpcnet.Sparsify(0, 0, 1, (0.05, 0.05, 0.2))
     lr = 0.0001
     decay = 0
@@ -122,5 +122,5 @@ else:
     decay = 5e-5
 
 model.compile(optimizer=Adam(lr, amsgrad=True, decay=decay), loss='sparse_categorical_crossentropy')
-model.save_weights('lpcnet28na_384_10_G16_00.h5');
+model.save_weights('lpcnet31ap_384_10_G16_00.h5');
 model.fit([in_data, features, periods], out_exc, batch_size=batch_size, epochs=nb_epochs, validation_split=0.0, callbacks=[checkpoint, sparsify])

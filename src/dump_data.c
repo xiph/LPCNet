@@ -326,6 +326,14 @@ int main(int argc, char **argv) {
         static float mem_preemph2 = 0;
         nb_bytes = opus_encode_float(enc, &xbuf[(st->pcount-1)*FRAME_SIZE], 320, bytes, 100);
         nb_samples = opus_decode_float(dec, bytes, nb_bytes, pcm_dec, 320, 0);
+#if 0
+        {
+            short foo[2*FRAME_SIZE];
+            for (i=0;i<2*FRAME_SIZE;i++)
+                foo[i] = 32768.*pcm_dec[i];
+            fwrite(foo, 2, 2*FRAME_SIZE, stdout);
+        }
+#endif
         preemphasis(pcm_dec, &mem_preemph2, pcm_dec, PREEMPHASIS, 2*FRAME_SIZE);
         if (nb_samples != 320) break;
         for (i=0;i<320;i++) pcm_dec[i] *= 32768;
