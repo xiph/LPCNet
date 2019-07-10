@@ -30,6 +30,9 @@
 */
 
 #include <immintrin.h>
+#include <omp.h>
+
+#define OMP
 
 #ifdef __AVX2__
 static __m256 exp8_approx(__m256 X)
@@ -161,57 +164,70 @@ static void vec_sigmoid(float *y, const float *x, int N)
 
 static void sgemv_accum16(float *out, const float *weights, int rows, int cols, int col_stride, const float *x)
 {
-   int i, j;
-   for (i=0;i<rows;i+=16)
+   // #pragma omp parallel for
+   for ( int i = 0; i < rows; i += 16 )
    {
-      float * restrict y;
-      __m256 vy0, vy8;
-      y = &out[i];
-      vy0 = _mm256_loadu_ps(&y[0]);
-      vy8 = _mm256_loadu_ps(&y[8]);
-      for (j=0;j<cols;j++)
+      float *y = &out[i];
+      __m256 vy0 = _mm256_loadu_ps(&y[0]);
+      __m256 vy8 = _mm256_loadu_ps(&y[8]);
+      for ( int j = 0; j < cols; j++ )
       {
-         __m256 vxj;
-         __m256 vw;
+         __m256 vxj, vw;
+         int weights_id = j*col_stride + i;
+
          vxj = _mm256_broadcast_ss(&x[j]);
-
-         vw = _mm256_loadu_ps(&weights[j*col_stride + i]);
+         vw  = _mm256_loadu_ps(&weights[weights_id]);
          vy0 = _mm256_fmadd_ps(vw, vxj, vy0);
-
-         vw = _mm256_loadu_ps(&weights[j*col_stride + i + 8]);
+         vw  = _mm256_loadu_ps(&weights[weights_id + 8]);
          vy8 = _mm256_fmadd_ps(vw, vxj, vy8);
       }
+
       _mm256_storeu_ps (&y[0], vy0);
       _mm256_storeu_ps (&y[8], vy8);
    }
 }
+
 static void sparse_sgemv_accum16(float *out, const float *weights, int rows, const int *idx, const float *x)
 {
-   int i, j;
-   for (i=0;i<rows;i+=16)
-   {
-      float * restrict y;
-      int cols;
-      __m256 vy0, vy8;
-      y = &out[i];
-      vy0 = _mm256_loadu_ps(&y[0]);
-      vy8 = _mm256_loadu_ps(&y[8]);
-      cols = *idx++;
-      for (j=0;j<cols;j++)
-      {
-         int id;
-         __m256 vxj;
-         __m256 vw;
-         id = *idx++;
+   int value_id_in_idx, cols_num = rows / 16;
+   int cols_list[cols_num], idx_id_list[cols_num + 1];
+   value_id_in_idx = idx_id_list[0] = 1;
+   for ( int i = 0; i < cols_num; i ++ ) {
+       value_id_in_idx  =  idx_id_list[i];
+       cols_list[i]     =  idx[value_id_in_idx-1];
+       idx_id_list[i+1] =  cols_list[i] + idx_id_list[i] + 1;
+   }
+
+   int weights_id = 0;
+   int weights_id_list[rows];
+   for ( int i = 0; i < rows/16; i ++ ) {
+       weights_id_list[i] = weights_id;
+       weights_id += cols_list[i] * 16;
+   }
+
+   // #pragma omp parallel for
+   for ( int i = 0; i < rows; i += 16 ) {
+      int list_id      = i / 16;
+      int cols         = cols_list[list_id];
+      int idx_start_id = idx_id_list[list_id];
+
+      float *y = &out[i];
+      __m256 vy0 = _mm256_loadu_ps(&y[0]);
+      __m256 vy8 = _mm256_loadu_ps(&y[8]);
+
+      for ( int j = 0; j < cols; j++ ) {
+         __m256 vxj, vw;
+         
+         int id         = idx[idx_start_id+j];
+         int weights_id = j*16 + weights_id_list[list_id];
+
          vxj = _mm256_broadcast_ss(&x[id]);
-
-         vw = _mm256_loadu_ps(&weights[0]);
+         vw  = _mm256_loadu_ps(&weights[weights_id]);
          vy0 = _mm256_fmadd_ps(vw, vxj, vy0);
-
-         vw = _mm256_loadu_ps(&weights[8]);
+         vw  = _mm256_loadu_ps(&weights[weights_id + 8]);
          vy8 = _mm256_fmadd_ps(vw, vxj, vy8);
-         weights += 16;
       }
+
       _mm256_storeu_ps (&y[0], vy0);
       _mm256_storeu_ps (&y[8], vy8);
    }
