@@ -68,24 +68,24 @@ def printSparseVector(f, A, name):
     A[:,2*N:] = A[:,2*N:] - np.diag(np.diag(A[:,2*N:]))
     printVector(f, diag, name + '_diag')
     idx = np.zeros((0,), dtype='int')
-#    cols = np.zeros((0,), dtype='int') # add
-#    offset_w, offset_idx = 0, 3*3*N//16  # add
+    cols = np.zeros((0,), dtype='int') # add
+    offset_w, offset_idx = 0, 3*3*N//16  # add
     for i in range(3*N//16):
         pos = idx.shape[0]
-        idx = np.append(idx, -1) # del
+        # idx = np.append(idx, -1) # del
         nb_nonzero = 0
         for j in range(N):
             if np.sum(np.abs(A[j, i*16:(i+1)*16])) > 1e-10:
                 nb_nonzero = nb_nonzero + 1
                 idx = np.append(idx, j)
                 W = np.concatenate([W, A[j, i*16:(i+1)*16]])
-        idx[pos] = nb_nonzero # del
-#        cols = np.append(cols, nb_nonzero) # add
-#        cols = np.append(cols, offset_w) # add
-#        cols = np.append(cols, offset_idx) # add
-#        offset_w += nb_nonzero*16 # add
-#        offset_idx += nb_nonzero # add
-#    idx = np.append(cols, idx) # add
+        # idx[pos] = nb_nonzero # del
+        cols = np.append(cols, nb_nonzero) # add
+        cols = np.append(cols, offset_w) # add
+        cols = np.append(cols, offset_idx) # add
+        offset_w += nb_nonzero*16 # add
+        offset_idx += nb_nonzero # add
+    idx = np.append(cols, idx) # add
     printVector(f, W, name)
     #idx = np.tile(np.concatenate([np.array([N]), np.arange(N)]), 3*N//16)
     printVector(f, idx, name + '_idx', dtype='int')
