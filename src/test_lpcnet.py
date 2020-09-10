@@ -84,7 +84,7 @@ for c in range(0, nb_frames):
         f = c*feature_chunk_size + fr
         a = features[c, fr, nb_features-order:]
         for i in range(skip, frame_size):
-            pred = -sum(a*pcm[f*frame_size + i - 1:f*frame_size + i - order-1:-1])
+            pred = -sum(a[::-1]*pcm[f*frame_size + i - order-1:f*frame_size + i - 1])
             fexc[0, 0, 1] = lin2ulaw(pred)
 
             p, state1, state2 = dec.predict([fexc, cfeat[:, fr:fr+1, :], state1, state2])
