@@ -226,11 +226,7 @@ static inline void sparse_sgemv_accum16(float *out, const float *weights, int ro
 #ifdef DOT_PROD
 #define USE_SU_BIAS
 
-#ifdef DOT_PROD
 typedef signed char qweight;
-#else
-typedef float qweight;
-#endif
 
 
 #define MAX_INPUTS (2048)
@@ -377,6 +373,9 @@ static inline void sparse_sgemv_accum8x4(float *_out, const qweight *w, int rows
 
 
 #else /*DOT_PROD*/
+typedef float qweight;
+#define sgemv_accum8x4 sgemv_accum
+
 static inline void sparse_sgemv_accum8x4(float *out, const qweight *weights, int rows, int ignore, const int *idx, const float *x)
 {
    int i, j;
