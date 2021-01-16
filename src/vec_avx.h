@@ -217,4 +217,3 @@ static void sparse_sgemv_accum16(float *out, const float *weights, int rows, con
       _mm256_storeu_ps (&y[8], vy8);
    }
 }
-
