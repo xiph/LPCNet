@@ -22,6 +22,7 @@ noinst_HEADERS = src/arch.h  \
 		 src/vec.h \
 		 src/vec_avx.h \
 		 src/vec_ssse3.h \
+		 src/vec_sse.h \
 		 src/vec_neon.h
 
 liblpcnet_la_SOURCES = \
