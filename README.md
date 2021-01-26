@@ -30,7 +30,15 @@ no vectorization will take place and the code will be very slow. On a recent x86
 ```
 export CFLAGS='-O3 -g -mavx2 -mfma'
 ```
-should work. On ARM, you can enable Neon with:
+should work. On older Intel CPUs, try:
+```
+export CFLAGS='-O3 -g -msse4.2'
+```
+and on even older Intel CPUs:
+```
+export CFLAGS='-O3 -g -mssse3'
+```
+On ARM, you can enable Neon with:
 ```
 export CFLAGS='-O3 -g -mfpu=neon'
 ```
