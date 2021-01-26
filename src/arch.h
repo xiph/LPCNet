@@ -157,6 +157,10 @@ typedef float celt_sig;
 typedef float celt_norm;
 typedef float celt_ener;
 
+#ifdef __FAST_MATH__
+#define FLOAT_APPROX
+#endif
+
 #ifdef FLOAT_APPROX
 /* This code should reliably detect NaN/inf even when -ffast-math is used.
    Assumes IEEE 754 format. */
