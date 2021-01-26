@@ -28,12 +28,13 @@
 */
 /* SSSE3 with optional SSE 4.2 support using ARM_NEON_2_X86 Intel converter
    Original code extracted from vec_neon.h */
-*/
 
 
 #ifdef __SSE4_2__
 #define USE_SSE4
 #endif
+
+#define NEON2SSE_DISABLE_PERFORMANCE_WARNING
 
 #include "NEON_2_SSE.h"
 
