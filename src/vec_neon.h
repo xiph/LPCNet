@@ -29,8 +29,10 @@
 /* NEON support for ARM machines */
 
 #include <arm_neon.h>
+
+
 #ifndef LPCNET_TEST
-static OPUS_INLINE float32x4_t exp4_approx(float32x4_t x) {
+static inline OPUS_INLINE float32x4_t exp4_approx(float32x4_t x) {
   int32x4_t i;
   float32x4_t xf;
 
@@ -57,7 +59,7 @@ static OPUS_INLINE float32x4_t exp4_approx(float32x4_t x) {
   return Y;
 }
 
-static OPUS_INLINE float celt_exp(float x)
+static inline float celt_exp(float x)
 {
    float out[4];
    float32x4_t X, Y;
@@ -67,7 +69,7 @@ static OPUS_INLINE float celt_exp(float x)
    return out[0];
 }
 
-static void softmax(float *y, const float *x, int N)
+static inline void softmax(float *y, const float *x, int N)
 {
     int i;
     for (i=0;i<N-3;i+=4)
@@ -81,7 +83,7 @@ static void softmax(float *y, const float *x, int N)
         y[i] = celt_exp(x[i]);
 }
 
-static void vec_tanh(float *y, const float *x, int N)
+static inline void vec_tanh(float *y, const float *x, int N)
 {
     int i;
     for (i=0;i<N-3;i+=4)
@@ -103,7 +105,7 @@ static void vec_tanh(float *y, const float *x, int N)
     }
 }
 
-static void vec_sigmoid(float *y, const float *x, int N)
+static inline void vec_sigmoid(float *y, const float *x, int N)
 {
     int i;
     for (i=0;i<N-3;i+=4)
@@ -124,7 +126,7 @@ static void vec_sigmoid(float *y, const float *x, int N)
 }
 #endif
 
-static void sgemv_accum16(float *out, const float *weights, int rows, int cols, int col_stride, const float *x)
+static inline void sgemv_accum16(float *out, const float *weights, int rows, int cols, int col_stride, const float *x)
 {
     int i, j;
     for (i=0;i<rows;i+=16)
@@ -168,7 +170,7 @@ static void sgemv_accum16(float *out, const float *weights, int rows, int cols, 
     }
 }
 
-static void sparse_sgemv_accum16(float *out, const float *w, int rows, const int *idx, const float *x)
+static inline void sparse_sgemv_accum16(float *out, const float *w, int rows, const int *idx, const float *x)
 {
     int i, j;
     for (i=0;i<rows;i+=16)
