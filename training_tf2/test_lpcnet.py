@@ -55,7 +55,7 @@ periods = (.1 + 50*features[:,:,36:37]+100).astype('int16')
 
 
 
-model.load_weights('lpcnet34bq17_384_01.h5')
+model.load_weights('lpcnet34du_384_13.h5')
 
 order = 16
 

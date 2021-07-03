@@ -117,7 +117,8 @@ void compute_dense(const DenseLayer *layer, float *output, const float *input)
 
 void compute_mdense(const MDenseLayer *layer, float *output, const float *input)
 {
-   int i, c;
+#if 0
+   int i, j, c;
    int N, M, C;
    int stride;
    float tmp[MAX_MDENSE_TMP];
@@ -139,6 +140,30 @@ void compute_mdense(const MDenseLayer *layer, float *output, const float *input)
          output[i] += tmp[c*N + i]*layer->factor[c*N + i];
    }
    compute_activation(output, output, N, layer->activation);
+#else
+   int i, j, N, M, C, stride;
+   M = layer->nb_inputs;
+   N = layer->nb_neurons;
+   C = layer->nb_channels;
+   celt_assert(N*C <= MAX_MDENSE_TMP);
+   stride = N*C;
+   
+   for (i=0;i<N;i++) {
+      float sum1, sum2;
+      sum1 = layer->bias[i];
+      sum2 = layer->bias[i + N];
+      for (j=0;j<M;j++) {
+         sum1 += layer->input_weights[j*stride + i]*input[j];
+         sum2 += layer->input_weights[j*stride + i + N]*input[j];
+      }
+      sum1 = layer->factor[i]*tanh(sum1);
+      sum2 = layer->factor[N + i]*tanh(sum2);
+      sum1 += sum2;
+      sum1 = 1.f/(1 + exp(-sum1));
+      output[i] = sum1;
+      //printf("%f %f\n", output[i], sum1);
+   }
+#endif
 }
 
 #if 0
@@ -371,6 +396,15 @@ int sample_from_pdf(const float *pdf, int N, float exp_boost, float pdf_floor)
     float r;
     float tmp[DUAL_FC_OUT_SIZE];
     celt_assert(N <= DUAL_FC_OUT_SIZE);
+    int val=0;
+    for (i=0;i<8;i++)
+    {
+       int bit;
+       bit = .025+.95*((rand()+.5f)/(RAND_MAX+1.f)) < pdf[(1<<i) | val];
+       val = (val << 1) | bit;
+    }
+    return val;
+    
     sum = 0;
 #ifdef SOFTMAX_HACK
     for (i=0;i<N;i++)
