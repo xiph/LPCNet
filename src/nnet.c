@@ -117,7 +117,7 @@ void compute_dense(const DenseLayer *layer, float *output, const float *input)
 
 void compute_mdense(const MDenseLayer *layer, float *output, const float *input)
 {
-#if 0
+#if 1
    int i, j, c;
    int N, M, C;
    int stride;
@@ -165,6 +165,63 @@ void compute_mdense(const MDenseLayer *layer, float *output, const float *input)
    }
 #endif
 }
+
+int sample_mdense(const MDenseLayer *layer, float *output, const float *input)
+{
+   int b, i, j, N, M, C, stride;
+   M = layer->nb_inputs;
+   N = layer->nb_neurons;
+   C = layer->nb_channels;
+   celt_assert(N*C <= MAX_MDENSE_TMP);
+   stride = N*C;
+   
+   celt_assert(N <= DUAL_FC_OUT_SIZE);
+   int val=0;
+    
+   /*for (i=0;i<N;i++) {
+      float sum1, sum2;
+      sum1 = layer->bias[i];
+      sum2 = layer->bias[i + N];
+      for (j=0;j<M;j++) {
+         sum1 += layer->input_weights[j*stride + i]*input[j];
+         sum2 += layer->input_weights[j*stride + i + N]*input[j];
+      }
+      sum1 = layer->factor[i]*tanh(sum1);
+      sum2 = layer->factor[N + i]*tanh(sum2);
+      sum1 += sum2;
+      sum1 = 1.f/(1 + exp(-sum1));
+      output[i] = sum1;
+      //printf("%f %f\n", output[i], sum1);
+   }*/
+   for (b=0;b<8;b++)
+   {
+      int bit;
+      int i;
+      float sum1, sum2;
+      
+      i = (1<<b) | val;
+
+      sum1 = layer->bias[i];
+      sum2 = layer->bias[i + N];
+      for (j=0;j<M;j++) {
+         sum1 += layer->input_weights[j*stride + i]*input[j];
+         sum2 += layer->input_weights[j*stride + i + N]*input[j];
+      }
+      vec_tanh(&sum1, &sum1, 1);
+      vec_tanh(&sum2, &sum2, 1);
+      sum1 = layer->factor[i]*sum1;
+      sum2 = layer->factor[N + i]*sum2;
+      sum1 += sum2;
+      //sum1 = 1.f/(1 + exp(-sum1));
+      vec_sigmoid(&sum1, &sum1, 1);
+      
+      bit = .025+.95*((rand()+.5f)/(RAND_MAX+1.f)) < sum1;
+      val = (val << 1) | bit;
+   }
+   return val;
+
+}
+
 
 #if 0
 void compute_gru(const GRULayer *gru, float *state, const float *input)
