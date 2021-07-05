@@ -117,8 +117,7 @@ void compute_dense(const DenseLayer *layer, float *output, const float *input)
 
 void compute_mdense(const MDenseLayer *layer, float *output, const float *input)
 {
-#if 1
-   int i, j, c;
+   int i, c;
    int N, M, C;
    int stride;
    float tmp[MAX_MDENSE_TMP];
@@ -140,59 +139,20 @@ void compute_mdense(const MDenseLayer *layer, float *output, const float *input)
          output[i] += tmp[c*N + i]*layer->factor[c*N + i];
    }
    compute_activation(output, output, N, layer->activation);
-#else
-   int i, j, N, M, C, stride;
-   M = layer->nb_inputs;
-   N = layer->nb_neurons;
-   C = layer->nb_channels;
-   celt_assert(N*C <= MAX_MDENSE_TMP);
-   stride = N*C;
-   
-   for (i=0;i<N;i++) {
-      float sum1, sum2;
-      sum1 = layer->bias[i];
-      sum2 = layer->bias[i + N];
-      for (j=0;j<M;j++) {
-         sum1 += layer->input_weights[j*stride + i]*input[j];
-         sum2 += layer->input_weights[j*stride + i + N]*input[j];
-      }
-      sum1 = layer->factor[i]*tanh(sum1);
-      sum2 = layer->factor[N + i]*tanh(sum2);
-      sum1 += sum2;
-      sum1 = 1.f/(1 + exp(-sum1));
-      output[i] = sum1;
-      //printf("%f %f\n", output[i], sum1);
-   }
-#endif
 }
 
-int sample_mdense(const MDenseLayer *layer, float *output, const float *input)
+int sample_mdense(const MDenseLayer *layer, const float *input)
 {
-   int b, i, j, N, M, C, stride;
+   int b, j, N, M, C, stride;
    M = layer->nb_inputs;
    N = layer->nb_neurons;
    C = layer->nb_channels;
    celt_assert(N*C <= MAX_MDENSE_TMP);
-   stride = N*C;
+   stride = M*C;
    
    celt_assert(N <= DUAL_FC_OUT_SIZE);
    int val=0;
     
-   /*for (i=0;i<N;i++) {
-      float sum1, sum2;
-      sum1 = layer->bias[i];
-      sum2 = layer->bias[i + N];
-      for (j=0;j<M;j++) {
-         sum1 += layer->input_weights[j*stride + i]*input[j];
-         sum2 += layer->input_weights[j*stride + i + N]*input[j];
-      }
-      sum1 = layer->factor[i]*tanh(sum1);
-      sum2 = layer->factor[N + i]*tanh(sum2);
-      sum1 += sum2;
-      sum1 = 1.f/(1 + exp(-sum1));
-      output[i] = sum1;
-      //printf("%f %f\n", output[i], sum1);
-   }*/
    for (b=0;b<8;b++)
    {
       int bit;
@@ -204,16 +164,14 @@ int sample_mdense(const MDenseLayer *layer, float *output, const float *input)
       sum1 = layer->bias[i];
       sum2 = layer->bias[i + N];
       for (j=0;j<M;j++) {
-         sum1 += layer->input_weights[j*stride + i]*input[j];
-         sum2 += layer->input_weights[j*stride + i + N]*input[j];
+         sum1 += layer->input_weights[i*stride + j]*input[j];
+         sum2 += layer->input_weights[i*stride + j + M]*input[j];
       }
-      vec_tanh(&sum1, &sum1, 1);
-      vec_tanh(&sum2, &sum2, 1);
-      sum1 = layer->factor[i]*sum1;
-      sum2 = layer->factor[N + i]*sum2;
+      sum1 = layer->factor[i]*tanh_approx(sum1);
+      sum2 = layer->factor[N + i]*tanh_approx(sum2);
       sum1 += sum2;
       //sum1 = 1.f/(1 + exp(-sum1));
-      vec_sigmoid(&sum1, &sum1, 1);
+      sum1 = sigmoid_approx(sum1);
       
       bit = .025+.95*((rand()+.5f)/(RAND_MAX+1.f)) < sum1;
       val = (val << 1) | bit;
@@ -444,68 +402,4 @@ void accum_embedding(const EmbeddingLayer *layer, float *output, int input)
    {
       output[i] += layer->embedding_weights[input*layer->dim + i];
    }    
-}
-
-int sample_from_pdf(const float *pdf, int N, float exp_boost, float pdf_floor)
-{
-    int i;
-    float sum, norm;
-    float r;
-    float tmp[DUAL_FC_OUT_SIZE];
-    celt_assert(N <= DUAL_FC_OUT_SIZE);
-    int val=0;
-    for (i=0;i<8;i++)
-    {
-       int bit;
-       bit = .025+.95*((rand()+.5f)/(RAND_MAX+1.f)) < pdf[(1<<i) | val];
-       val = (val << 1) | bit;
-    }
-    return val;
-    
-    sum = 0;
-#ifdef SOFTMAX_HACK
-    for (i=0;i<N;i++)
-    {
-        tmp[i] = pdf[i] * (1.f+exp_boost);
-    }
-    softmax(tmp, tmp, N);
-    for (i=0;i<N;i++)
-    {
-        sum += tmp[i];
-    }
-#else
-    /* Decrease the temperature of the sampling. */
-    for (i=0;i<N;i++)
-    {
-        tmp[i] = pow(pdf[i], 1.f+exp_boost);
-        sum += tmp[i];
-    }
-#endif
-    norm = 1.f/sum;
-    /* Convert tmp to a CDF while subtracting the floor */
-    tmp[0] = MAX16(0, norm*tmp[0] - pdf_floor);
-    for (i=1;i<N;i++)
-    {
-        tmp[i] = tmp[i-1] + MAX16(0, norm*tmp[i] - pdf_floor);
-    }
-    /* Do the sampling (from the cdf). */
-    r = tmp[N-1] * ((rand()+.5f)/(RAND_MAX+1.f));
-#if 1 /* Bisection search in the CDF (faster than the equivalent linear one below). */
-    {
-        int start=-1;
-        int end = N-1;
-        while (end > start+1) {
-            int mid = (start+end)>>1;
-            if (r <= tmp[mid]) end = mid;
-            else start = mid;
-        }
-        return end;
-    }
-#else
-    for (i=0;i<N-1;i++)
-    {
-        if (r <= tmp[i]) return i;
-    }
-    return N-1;
-#endif
 }
