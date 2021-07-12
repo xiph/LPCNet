@@ -45,19 +45,11 @@ parser.add_argument('--batch-size', metavar='<batch size>', default=128, type=in
 
 args = parser.parse_args()
 
-print(args.features)
-print(args.data)
-print(args.model)
-print(args.quantize)
-print(args.density)
-print(args.grua_size)
-
 density = (0.05, 0.05, 0.2)
 if args.density_split is not None:
     density = args.density_split
 elif args.density is not None:
     density = [0.5*args.density, 0.5*args.density, 2.0*args.density];
-print(density)
 
 import importlib
 lpcnet = importlib.import_module(args.model)
