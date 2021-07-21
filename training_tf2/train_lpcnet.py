@@ -90,13 +90,13 @@ quantize = args.quantize is not None
 
 if quantize:
     lr = 0.00003
-# Set to True if you want end2end training (with differentiable LPC computation)
-flag_e2e = True
-
     decay = 0
 else:
     lr = 0.001
     decay = 2.5e-5
+
+# Set to True if you want end2end training (with differentiable LPC computation)
+flag_e2e = True
 
 opt = Adam(lr, decay=decay, beta_2=0.99)
 strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
