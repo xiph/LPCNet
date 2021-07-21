@@ -35,7 +35,7 @@
 #include "arch.h"
 
 
-#ifdef __AVX__
+#if defined(__AVX__) || defined(__SSE2__)
 #include "vec_avx.h"
 #elif defined(__ARM_NEON__) || defined(__ARM_NEON)
 #include "vec_neon.h"
@@ -79,7 +79,7 @@ static inline float celt_exp2(float x)
 }
 #define celt_exp(x) celt_exp2((x)*1.44269504f)
 
-static inline float tansig_approx(float x)
+static inline float tanh_approx(float x)
 {
     int i;
     float y, dy;
@@ -100,7 +100,7 @@ static inline float tansig_approx(float x)
 
 static inline float sigmoid_approx(float x)
 {
-   return .5f + .5f*tansig_approx(.5f*x);
+   return .5f + .5f*tanh_approx(.5f*x);
 }
 
 static inline void softmax(float *y, const float *x, int N)
@@ -115,7 +115,7 @@ static inline void vec_tanh(float *y, const float *x, int N)
     int i;
     for (i=0;i<N;i++)
     {
-        y[i] = tansig_approx(x[i]);
+        y[i] = tanh_approx(x[i]);
     }
 }
 
@@ -250,7 +250,7 @@ static inline void sparse_sgemv_accum8x4(float *out, const qweight *w, int rows,
          int pos;
          float * restrict y;
          int xj0, xj1, xj2, xj3;
-         pos = 4 * (*idx++);
+         pos = (*idx++);
          xj0 = x[pos+0];
          xj1 = x[pos+1];
          xj2 = x[pos+2];
@@ -318,7 +318,7 @@ static inline void sparse_sgemv_accum8x4(float *out, const qweight *w, int rows,
          int pos;
          float * restrict y;
          int xj0, xj1, xj2, xj3;
-         pos = 4 * (*idx++);
+         pos = (*idx++);
          xj0 = x[pos+0];
          xj1 = x[pos+1];
          xj2 = x[pos+2];
@@ -357,7 +357,7 @@ static inline void sparse_sgemv_accum8x4(float *out, const qweight *w, int rows,
          int pos;
          float * restrict y;
          float xj0, xj1, xj2, xj3;
-         pos = 4 * (*idx++);
+         pos = (*idx++);
          xj0 = x[pos+0];
          xj1 = x[pos+1];
          xj2 = x[pos+2];

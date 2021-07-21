@@ -68,7 +68,7 @@ static void sgemv_accum(float *out, const float *weights, int rows, int cols, in
    }
 }
 
-void compute_activation(float *output, float *input, int N, int activation)
+void compute_activation(float *output, const float *input, int N, int activation)
 {
    int i;
    if (activation == ACTIVATION_SIGMOID) {
@@ -140,6 +140,54 @@ void compute_mdense(const MDenseLayer *layer, float *output, const float *input)
    }
    compute_activation(output, output, N, layer->activation);
 }
+
+int sample_mdense(const MDenseLayer *layer, const float *input, const float *sampling_logit_table)
+{
+   int b, j, N, M, C, stride;
+   M = layer->nb_inputs;
+   N = layer->nb_neurons;
+   C = layer->nb_channels;
+   celt_assert(N*C <= MAX_MDENSE_TMP);
+   stride = M*C;
+   
+   celt_assert(N <= DUAL_FC_OUT_SIZE);
+   int val=0;
+   float thresholds[8];
+
+   /* Computing all the random thresholds in advance. These thresholds are directly
+      based on the logit to avoid computing the sigmoid.*/
+   for (b=0;b<8;b++) thresholds[b] = sampling_logit_table[rand()&0xFF];
+
+   for (b=0;b<8;b++)
+   {
+      int bit;
+      int i;
+      float sum1, sum2;
+      
+      i = (1<<b) | val;
+
+      sum1 = layer->bias[i];
+      sum2 = layer->bias[i + N];
+      for (j=0;j<M;j++) {
+         sum1 += layer->input_weights[i*stride + j]*input[j];
+         sum2 += layer->input_weights[i*stride + j + M]*input[j];
+      }
+      sum1 = layer->factor[i]*tanh_approx(sum1);
+      sum2 = layer->factor[N + i]*tanh_approx(sum2);
+      sum1 += sum2;
+      //sum1 = 1.f/(1 + exp(-sum1));
+#if 1 /* Sample the decision based on the logit. */
+      bit = thresholds[b] < sum1;
+#else
+      sum1 = sigmoid_approx(sum1);
+      bit = .025+.95*((rand()+.5f)/(RAND_MAX+1.f)) < sum1;
+#endif
+      val = (val << 1) | bit;
+   }
+   return val;
+
+}
+
 
 #if 0
 void compute_gru(const GRULayer *gru, float *state, const float *input)
@@ -248,6 +296,50 @@ void compute_gru2(const GRULayer *gru, float *state, const float *input)
       state[i] = h[i];
 }
 
+void compute_gruB(const GRULayer *gru, const float* gru_b_condition, float *state, const float *input)
+{
+   int i;
+   int N, M;
+   int stride;
+   float zrh[3*MAX_RNN_NEURONS];
+   float recur[3*MAX_RNN_NEURONS];
+   float *z;
+   float *r;
+   float *h;
+   M = gru->nb_inputs;
+   N = gru->nb_neurons;
+   z = zrh;
+   r = &zrh[N];
+   h = &zrh[2*N];
+   celt_assert(gru->nb_neurons <= MAX_RNN_NEURONS);
+   celt_assert(input != state);
+   celt_assert(gru->reset_after);
+   stride = 3*N;
+   /* Compute update gate. */
+#ifdef USE_SU_BIAS
+   for (i=0;i<3*N;i++)
+      zrh[i] = gru->subias[i] + gru_b_condition[i];
+#else
+   for (i=0;i<3*N;i++)
+      zrh[i] = gru->bias[i] + gru_b_condition[i];
+#endif
+   sparse_sgemv_accum8x4(zrh, gru->input_weights, 3*N, M, gru->input_weights_idx, input);
+   for (i=0;i<3*N;i++)
+      recur[i] = gru->bias[3*N + i];
+   sgemv_accum(recur, gru->recurrent_weights, 3*N, N, stride, state);
+   for (i=0;i<2*N;i++)
+      zrh[i] += recur[i];
+   compute_activation(zrh, zrh, 2*N, ACTIVATION_SIGMOID);
+   for (i=0;i<N;i++)
+      h[i] += recur[2*N+i]*r[i];
+   compute_activation(h, h, N, gru->activation);
+   for (i=0;i<N;i++)
+      h[i] = z[i]*state[i] + (1-z[i])*h[i];
+   for (i=0;i<N;i++)
+      state[i] = h[i];
+}
+
+
 void compute_gru3(const GRULayer *gru, float *state, const float *input)
 {
    int i;
@@ -282,8 +374,8 @@ void compute_gru3(const GRULayer *gru, float *state, const float *input)
       state[i] = h[i];
 }
 
-/* WARNING: for efficiency reasons, this function overwrites the input vector. */
-void compute_sparse_gru(const SparseGRULayer *gru, float *state, float *input)
+/* The input of this GRU is after the input matrix multiply. */
+void compute_sparse_gru(const SparseGRULayer *gru, float *state, const float *input)
 {
    int i, k;
    int N;
@@ -293,9 +385,9 @@ void compute_sparse_gru(const SparseGRULayer *gru, float *state, float *input)
    float *h;
    const float *bias;
    N = gru->nb_neurons;
-   z = input;
-   r = &input[N];
-   h = &input[2*N];
+   z = recur;
+   r = &recur[N];
+   h = &recur[2*N];
    celt_assert(gru->nb_neurons <= MAX_RNN_NEURONS);
    celt_assert(input != state);
    celt_assert(gru->reset_after);
@@ -304,17 +396,20 @@ void compute_sparse_gru(const SparseGRULayer *gru, float *state, float *input)
 #else
    bias = &gru->bias[3*N];   
 #endif
-   for (k=0;k<3;k++)
+   for (k=0;k<2;k++)
+   {
+      for (i=0;i<N;i++)
+         recur[k*N + i] = bias[k*N + i] + gru->diag_weights[k*N + i]*state[i] + input[k*N + i];
+   }
+   for (;k<3;k++)
    {
       for (i=0;i<N;i++)
          recur[k*N + i] = bias[k*N + i] + gru->diag_weights[k*N + i]*state[i];
    }
    sparse_sgemv_accum8x4(recur, gru->recurrent_weights, 3*N, N, gru->idx, state);
-   for (i=0;i<2*N;i++)
-      input[i] += recur[i];
-   compute_activation(input, input, 2*N, ACTIVATION_SIGMOID);
+   compute_activation(recur, recur, 2*N, ACTIVATION_SIGMOID);
    for (i=0;i<N;i++)
-      h[i] += recur[2*N+i]*r[i];
+      h[i] = h[i]*r[i] + input[2*N+i];
    compute_activation(h, h, N, gru->activation);
    for (i=0;i<N;i++)
       state[i] = z[i]*state[i] + (1-z[i])*h[i];
@@ -352,6 +447,15 @@ void compute_embedding(const EmbeddingLayer *layer, float *output, int input)
    }    
 }
 
+void compute_gru_a_input(float *output, const float *input, int N, const EmbeddingLayer *layer1, int val1, const EmbeddingLayer *layer2, int val2, const EmbeddingLayer *layer3, int val3) {
+   int i;
+   for (i=0;i<3*N;i++) {
+      output[i] = input[i] + layer1->embedding_weights[val1*layer1->dim + i]
+                           + layer2->embedding_weights[val2*layer2->dim + i]
+                           + layer3->embedding_weights[val3*layer3->dim + i];
+   }
+}
+
 void accum_embedding(const EmbeddingLayer *layer, float *output, int input)
 {
    int i;
@@ -362,59 +466,4 @@ void accum_embedding(const EmbeddingLayer *layer, float *output, int input)
    {
       output[i] += layer->embedding_weights[input*layer->dim + i];
    }    
-}
-
-int sample_from_pdf(const float *pdf, int N, float exp_boost, float pdf_floor)
-{
-    int i;
-    float sum, norm;
-    float r;
-    float tmp[DUAL_FC_OUT_SIZE];
-    celt_assert(N <= DUAL_FC_OUT_SIZE);
-    sum = 0;
-#ifdef SOFTMAX_HACK
-    for (i=0;i<N;i++)
-    {
-        tmp[i] = pdf[i] * (1.f+exp_boost);
-    }
-    softmax(tmp, tmp, N);
-    for (i=0;i<N;i++)
-    {
-        sum += tmp[i];
-    }
-#else
-    /* Decrease the temperature of the sampling. */
-    for (i=0;i<N;i++)
-    {
-        tmp[i] = pow(pdf[i], 1.f+exp_boost);
-        sum += tmp[i];
-    }
-#endif
-    norm = 1.f/sum;
-    /* Convert tmp to a CDF while subtracting the floor */
-    tmp[0] = MAX16(0, norm*tmp[0] - pdf_floor);
-    for (i=1;i<N;i++)
-    {
-        tmp[i] = tmp[i-1] + MAX16(0, norm*tmp[i] - pdf_floor);
-    }
-    /* Do the sampling (from the cdf). */
-    r = tmp[N-1] * ((rand()+.5f)/(RAND_MAX+1.f));
-#if 1 /* Bisection search in the CDF (faster than the equivalent linear one below). */
-    {
-        int start=-1;
-        int end = N-1;
-        while (end > start+1) {
-            int mid = (start+end)>>1;
-            if (r <= tmp[mid]) end = mid;
-            else start = mid;
-        }
-        return end;
-    }
-#else
-    for (i=0;i<N-1;i++)
-    {
-        if (r <= tmp[i]) return i;
-    }
-    return N-1;
-#endif
 }

@@ -63,18 +63,20 @@ def printVector(f, vector, name, dtype='float', dotp=False):
     f.write('\n};\n\n')
     return;
 
-def printSparseVector(f, A, name):
+def printSparseVector(f, A, name, have_diag=True):
     N = A.shape[0]
+    M = A.shape[1]
     W = np.zeros((0,), dtype='int')
     W0 = np.zeros((0,))
-    diag = np.concatenate([np.diag(A[:,:N]), np.diag(A[:,N:2*N]), np.diag(A[:,2*N:])])
-    A[:,:N] = A[:,:N] - np.diag(np.diag(A[:,:N]))
-    A[:,N:2*N] = A[:,N:2*N] - np.diag(np.diag(A[:,N:2*N]))
-    A[:,2*N:] = A[:,2*N:] - np.diag(np.diag(A[:,2*N:]))
+    if have_diag:
+        diag = np.concatenate([np.diag(A[:,:N]), np.diag(A[:,N:2*N]), np.diag(A[:,2*N:])])
+        A[:,:N] = A[:,:N] - np.diag(np.diag(A[:,:N]))
+        A[:,N:2*N] = A[:,N:2*N] - np.diag(np.diag(A[:,N:2*N]))
+        A[:,2*N:] = A[:,2*N:] - np.diag(np.diag(A[:,2*N:]))
+        printVector(f, diag, name + '_diag')
     AQ = np.minimum(127, np.maximum(-128, np.round(A*128))).astype('int')
-    printVector(f, diag, name + '_diag')
     idx = np.zeros((0,), dtype='int')
-    for i in range(3*N//8):
+    for i in range(M//8):
         pos = idx.shape[0]
         idx = np.append(idx, -1)
         nb_nonzero = 0
@@ -83,7 +85,7 @@ def printSparseVector(f, A, name):
             qblock = AQ[j*4:(j+1)*4, i*8:(i+1)*8]
             if np.sum(np.abs(block)) > 1e-10:
                 nb_nonzero = nb_nonzero + 1
-                idx = np.append(idx, j)
+                idx = np.append(idx, j*4)
                 vblock = qblock.transpose((1,0)).reshape((-1,))
                 W0 = np.concatenate([W0, block.reshape((-1,))])
                 W = np.concatenate([W, vblock])
@@ -129,17 +131,12 @@ def dump_sparse_gru(self, f, hf):
     hf.write('extern const SparseGRULayer {};\n\n'.format(name));
     return True
 
-def dump_gru_layer(self, f, hf):
+def dump_grub(self, f, hf, gru_a_size):
     global max_rnn_neurons
     name = self.name
     print("printing layer " + name + " of type " + self.__class__.__name__)
     weights = self.get_weights()
-    f.write('#ifdef DOT_PROD\n')
-    qweight = np.clip(np.round(128.*weights[0]).astype('int'), -128, 127)
-    printVector(f, qweight, name + '_weights', dotp=True, dtype='qweight')
-    f.write('#else /*DOT_PROD*/\n')
-    printVector(f, weights[0], name + '_weights')
-    f.write('#endif /*DOT_PROD*/\n')
+    qweight = printSparseVector(f, weights[0][:gru_a_size, :], name + '_weights', have_diag=False)
     printVector(f, weights[1], name + '_recurrent_weights')
     printVector(f, weights[-1], name + '_bias')
     subias = weights[-1].copy()
@@ -155,13 +152,19 @@ def dump_gru_layer(self, f, hf):
         reset_after = 1
     neurons = weights[0].shape[1]//3
     max_rnn_neurons = max(max_rnn_neurons, neurons)
-    f.write('const GRULayer {} = {{\n   {}_bias,\n   {}_subias,\n   {}_weights,\n   {}_recurrent_weights,\n   {}, {}, ACTIVATION_{}, {}\n}};\n\n'
-            .format(name, name, name, name, name, weights[0].shape[0], weights[0].shape[1]//3, activation, reset_after))
-    hf.write('#define {}_OUT_SIZE {}\n'.format(name.upper(), weights[0].shape[1]//3))
-    hf.write('#define {}_STATE_SIZE {}\n'.format(name.upper(), weights[0].shape[1]//3))
+    f.write('const GRULayer {} = {{\n   {}_bias,\n   {}_subias,\n   {}_weights,\n   {}_weights_idx,\n   {}_recurrent_weights,\n   {}, {}, ACTIVATION_{}, {}\n}};\n\n'
+            .format(name, name, name, name, name, name, gru_a_size, weights[0].shape[1]//3, activation, reset_after))
     hf.write('extern const GRULayer {};\n\n'.format(name));
     return True
-GRU.dump_layer = dump_gru_layer
+
+def dump_gru_layer_dummy(self, f, hf):
+    name = self.name
+    weights = self.get_weights()
+    hf.write('#define {}_OUT_SIZE {}\n'.format(name.upper(), weights[0].shape[1]//3))
+    hf.write('#define {}_STATE_SIZE {}\n'.format(name.upper(), weights[0].shape[1]//3))
+    return True;
+
+GRU.dump_layer = dump_gru_layer_dummy
 
 def dump_dense_layer_impl(name, weights, bias, activation, f, hf):
     printVector(f, weights, name + '_weights')
@@ -186,7 +189,7 @@ def dump_mdense_layer(self, f, hf):
     name = self.name
     print("printing layer " + name + " of type " + self.__class__.__name__)
     weights = self.get_weights()
-    printVector(f, np.transpose(weights[0], (1, 2, 0)), name + '_weights')
+    printVector(f, np.transpose(weights[0], (0, 2, 1)), name + '_weights')
     printVector(f, np.transpose(weights[1], (1, 0)), name + '_bias')
     printVector(f, np.transpose(weights[2], (1, 0)), name + '_factor')
     activation = self.activation.__name__.upper()
@@ -232,12 +235,16 @@ def dump_embedding_layer(self, f, hf):
     return False
 Embedding.dump_layer = dump_embedding_layer
 
+filename = sys.argv[1]
+with h5py.File(filename, "r") as f:
+    units = min(f['model_weights']['gru_a']['gru_a']['recurrent_kernel:0'].shape)
+    units2 = min(f['model_weights']['gru_b']['gru_b']['recurrent_kernel:0'].shape)
 
-model, _, _ = lpcnet.new_lpcnet_model(rnn_units1=384, flag_e2e = flag_e2e)
+model, _, _ = lpcnet.new_lpcnet_model(rnn_units1=units, rnn_units2=units2, flag_e2e = flag_e2e)
 model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['sparse_categorical_accuracy'])
 #model.summary()
 
-model.load_weights(sys.argv[1])
+model.load_weights(filename)
 
 if len(sys.argv) > 2:
     cfile = sys.argv[2];
@@ -271,6 +278,13 @@ W = model.get_layer('gru_a').get_weights()[0][3*embed_size:,:]
 #FIXME: dump only half the biases
 b = model.get_layer('gru_a').get_weights()[2]
 dump_dense_layer_impl('gru_a_dense_feature', W, b, 'LINEAR', f, hf)
+
+W = model.get_layer('gru_b').get_weights()[0][model.rnn_units1:,:]
+b = model.get_layer('gru_b').get_weights()[2]
+# Set biases to zero because they'll be included in the GRU input part
+# (we need regular and SU biases)
+dump_dense_layer_impl('gru_b_dense_feature', W, 0*b, 'LINEAR', f, hf)
+dump_grub(model.get_layer('gru_b'), f, hf, model.rnn_units1)
 
 layer_list = []
 for i, layer in enumerate(model.layers):

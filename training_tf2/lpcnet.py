@@ -47,6 +47,23 @@ pcm_bits = 8
 embed_size = 128
 pcm_levels = 2**pcm_bits
 
+def interleave(p, samples):
+    p2=tf.expand_dims(p, 3)
+    nb_repeats = pcm_levels//(2*p.shape[2])
+    p3 = tf.reshape(tf.repeat(tf.concat([1-p2, p2], 3), nb_repeats), (-1, samples, pcm_levels))
+    return p3
+
+def tree_to_pdf(p, samples):
+    return interleave(p[:,:,1:2], samples) * interleave(p[:,:,2:4], samples) * interleave(p[:,:,4:8], samples) * interleave(p[:,:,8:16], samples) \
+         * interleave(p[:,:,16:32], samples) * interleave(p[:,:,32:64], samples) * interleave(p[:,:,64:128], samples) * interleave(p[:,:,128:256], samples)
+
+def tree_to_pdf_train(p):
+    #FIXME: try not to hardcode the 2400 samples (15 frames * 160 samples/frame)
+    return tree_to_pdf(p, 2400)
+
+def tree_to_pdf_infer(p):
+    return tree_to_pdf(p, 1)
+
 def quant_regularizer(x):
     Q = 128
     Q_1 = 1./Q
@@ -101,6 +118,57 @@ class Sparsify(Callback):
                 p[:, k*N:(k+1)*N] = p[:, k*N:(k+1)*N]*mask
                 #print(thresh, np.mean(mask))
             w[1] = p
+            layer.set_weights(w)
+
+class SparsifyGRUB(Callback):
+    def __init__(self, t_start, t_end, interval, grua_units, density):
+        super(SparsifyGRUB, self).__init__()
+        self.batch = 0
+        self.t_start = t_start
+        self.t_end = t_end
+        self.interval = interval
+        self.final_density = density
+        self.grua_units = grua_units
+
+    def on_batch_end(self, batch, logs=None):
+        #print("batch number", self.batch)
+        self.batch += 1
+        if self.batch < self.t_start or ((self.batch-self.t_start) % self.interval != 0 and self.batch < self.t_end):
+            #print("don't constrain");
+            pass
+        else:
+            #print("constrain");
+            layer = self.model.get_layer('gru_b')
+            w = layer.get_weights()
+            p = w[0]
+            N = p.shape[0]
+            M = p.shape[1]//3
+            for k in range(3):
+                density = self.final_density[k]
+                if self.batch < self.t_end:
+                    r = 1 - (self.batch-self.t_start)/(self.t_end - self.t_start)
+                    density = 1 - (1-self.final_density[k])*(1 - r*r*r)
+                A = p[:, k*M:(k+1)*M]
+                #This is needed because of the CuDNNGRU strange weight ordering
+                A = np.reshape(A, (M, N))
+                A = np.transpose(A, (1, 0))
+                N2 = self.grua_units
+                A2 = A[:N2, :]
+                L=np.reshape(A2, (N2//4, 4, M//8, 8))
+                S=np.sum(L*L, axis=-1)
+                S=np.sum(S, axis=1)
+                SS=np.sort(np.reshape(S, (-1,)))
+                thresh = SS[round(M*N2//32*(1-density))]
+                mask = (S>=thresh).astype('float32');
+                mask = np.repeat(mask, 4, axis=0)
+                mask = np.repeat(mask, 8, axis=1)
+                A = np.concatenate([A2*mask, A[N2:,:]], axis=0)
+                #This is needed because of the CuDNNGRU strange weight ordering
+                A = np.transpose(A, (1, 0))
+                A = np.reshape(A, (N, M))
+                p[:, k*M:(k+1)*M] = A
+                #print(thresh, np.mean(mask))
+            w[0] = p
             layer.set_weights(w)
             
 
@@ -201,11 +269,11 @@ def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features = 38, train
                kernel_constraint=constraint, kernel_regularizer=quant)
 
     rnn_in = Concatenate()([cpcm, rep(cfeat)])
-    md = MDense(pcm_levels, activation='softmax', name='dual_fc')
+    md = MDense(pcm_levels, activation='sigmoid', name='dual_fc')
     gru_out1, _ = rnn(rnn_in)
     gru_out2, _ = rnn2(Concatenate()([gru_out1, rep(cfeat)]))
-    ulaw_prob = md(gru_out2)
-    
+    ulaw_prob = Lambda(tree_to_pdf_train)(md(gru_out2))
+
     if adaptation:
         rnn.trainable=False
         rnn2.trainable=False
@@ -230,7 +298,7 @@ def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features = 38, train
         dec_rnn_in = Concatenate()([cpcm_decoder, dec_feat])
     dec_gru_out1, state1 = rnn(dec_rnn_in, initial_state=dec_state1)
     dec_gru_out2, state2 = rnn2(Concatenate()([dec_gru_out1, dec_feat]), initial_state=dec_state2)
-    dec_ulaw_prob = md(dec_gru_out2)
+    dec_ulaw_prob = Lambda(tree_to_pdf_infer)(md(dec_gru_out2))
 
     decoder = Model([pcm, dec_feat, dec_state1, dec_state2], [dec_ulaw_prob, state1, state2])
     return model, encoder, decoder
