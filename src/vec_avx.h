@@ -858,7 +858,9 @@ static inline void sparse_sgemv_accum8x4(float *_out, const qweight *w, int rows
 
 #else /*DOT_PROD*/
 typedef float qweight;
+#ifndef LPCNET_TEST
 #define sgemv_accum8x4 sgemv_accum
+#endif
 
 static inline void sparse_sgemv_accum8x4(float *out, const qweight *weights, int rows, int ignore, const int *idx, const float *x)
 {

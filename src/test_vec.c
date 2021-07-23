@@ -122,11 +122,90 @@ int test_sparse_sgemv_accum16() {
     return 0;
 }
 
+#ifndef DOT_PROD
+#define test_sgemv_accum8x4()		0
+#define test_sparse_sgemv_accum8x4()	0
+#else
+int test_sgemv_accum8x4() {
+    qweight w[ROWS*COLS];
+    float x[COLS];
+    float out_nosimd[ROWS], out[ROWS];
+    int i;
+
+    printf("sgemv_accum8x4....................: ");
+    for(i=0; i<ROWS*COLS; i++) {
+	w[i] = i;
+    }
+    for(i=0; i<ROWS; i++) {
+	out_nosimd[i] = 0;
+	out[i] = 0;
+    }
+
+    for(i=0; i<COLS; i++) {
+	x[i] = i+1;
+    }
+
+    sgemv_accum8x4_nosimd(out_nosimd, w, ROWS, COLS, 1, x);
+    sgemv_accum8x4(out, w, ROWS, COLS, 1, x);
+
+    for(i=0; i<ROWS; i++) {
+	if (out_nosimd[i] != out[i]) {
+	    printf("fail\n");
+	    for(i=0; i<ROWS; i++) {
+		printf("%d %f %f\n", i, out_nosimd[i], out[i]);
+		if (out_nosimd[i] != out[i])
+		    return 1;
+	    }
+	}
+    }
+
+    printf("pass\n");
+    return 0;
+}
+
+
+int test_sparse_sgemv_accum8x4() {
+    int rows = ROW_STEP*ENTRIES;
+    int indx[] = {1,0,2,0,1};
+    qweight w[ROW_STEP*(1+2)];
+    float x[ENTRIES] = {1,2};
+    float out_nosimd[ROW_STEP*(1+2)], out[ROW_STEP*(1+2)];
+    int i;
+
+    printf("sparse_sgemv_accum8x4.............: ");
+    for(i=0; i<ROW_STEP*(1+2); i++) {
+	w[i] = i;
+	out_nosimd[i] = 0;
+	out[i] = 0;
+    }
+
+    sparse_sgemv_accum8x4_nosimd(out_nosimd, w, rows, 1, indx, x);
+    sparse_sgemv_accum8x4(out, w, rows, 1, indx, x);
+
+    for(i=0; i<ROW_STEP*ENTRIES; i++) {
+	if (out_nosimd[i] != out[i]) {
+	    printf("fail\n");
+	    for(i=0; i<ROW_STEP*ENTRIES; i++) {
+		printf("%d %f %f\n", i, out_nosimd[i], out[i]);
+		if (out_nosimd[i] != out[i])
+		    return 1;
+	    }
+	}
+    }
+
+    printf("pass\n");
+    return 0;
+}
+#endif
+
 int main() {
     printf("testing vector routines on SIMD: %s\n", simd);
     int test1 = test_sgemv_accum16();
     int test2 = test_sparse_sgemv_accum16();
-    return test1 || test2;
+    int test3 = test_sgemv_accum8x4();
+    int test4 = test_sparse_sgemv_accum8x4();
+
+    return test1 || test2 || test3 || test4;
 }
 
   
