@@ -42,6 +42,8 @@ const char simd[]="none";
 #undef vec_sigmoid
 #undef sgemv_accum16
 #undef sparse_sgemv_accum16
+#define sgemv_accum8x4 sgemv_accum8x4_nosimd
+#define sparse_sgemv_accum8x4 sparse_sgemv_accum8x4_nosimd
 #include "vec.h"
 
 #define ROW_STEP 16
