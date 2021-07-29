@@ -66,12 +66,14 @@ lpcnet = importlib.import_module(args.model)
 import sys
 import numpy as np
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import ModelCheckpoint
+from tensorflow.keras.callbacks import ModelCheckpoint, CSVLogger
 from ulaw import ulaw2lin, lin2ulaw
 import tensorflow.keras.backend as K
 import h5py
 
 import tensorflow as tf
+from tf_funcs import *
+from lossfuncs import *
 #gpus = tf.config.experimental.list_physical_devices('GPU')
 #if gpus:
 #  try:
@@ -93,12 +95,18 @@ else:
     lr = 0.001
     decay = 2.5e-5
 
+# Set to True if you want end2end training (with differentiable LPC computation)
+flag_e2e = True
+
 opt = Adam(lr, decay=decay, beta_2=0.99)
 strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
 
 with strategy.scope():
-    model, _, _ = lpcnet.new_lpcnet_model(rnn_units1=args.grua_size, rnn_units2=args.grub_size, training=True, quantize=quantize)
-    model.compile(optimizer=opt, loss='sparse_categorical_crossentropy', metrics='sparse_categorical_crossentropy')
+    model, _, _ = lpcnet.new_lpcnet_model(rnn_units1=args.grua_size, rnn_units2=args.grub_size, training=True, quantize=quantize, flag_e2e = flag_e2e)
+    if not flag_e2e:
+        model.compile(optimizer=opt, loss='sparse_categorical_crossentropy', metrics='sparse_categorical_crossentropy')
+    else:
+        model.compile(optimizer=opt, loss = interp_mulaw(gamma = 2),metrics=[metric_cel,metric_icel,metric_exc_sd,metric_oginterploss])
     model.summary()
 
 feature_file = args.features
@@ -150,4 +158,5 @@ else:
     grub_sparsify = lpcnet.SparsifyGRUB(2000, 40000, 400, args.grua_size, grub_density)
 
 model.save_weights('{}_{}_initial.h5'.format(args.output, args.grua_size))
-model.fit([in_data, features, periods], out_exc, batch_size=batch_size, epochs=nb_epochs, validation_split=0.0, callbacks=[checkpoint, sparsify, grub_sparsify])
+csv_logger = CSVLogger('training_vals.log')
+model.fit([in_data, features, periods], out_exc, batch_size=batch_size, epochs=nb_epochs, validation_split=0.0, callbacks=[checkpoint, sparsify, grub_sparsify, csv_logger])
