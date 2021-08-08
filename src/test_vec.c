@@ -126,32 +126,36 @@ int test_sparse_sgemv_accum16() {
 #define test_sgemv_accum8x4()		0
 #define test_sparse_sgemv_accum8x4()	0
 #else
+#define ROW_STEPa       32
+#define ROWSa           (ROW_STEPa*10)
+#define COLSa           4
+
 int test_sgemv_accum8x4() {
-    qweight w[ROWS*COLS];
-    float x[COLS];
-    float out_nosimd[ROWS], out[ROWS];
+    qweight w[ROWSa*COLSa];
+    float x[COLSa];
+    float out_nosimd[ROWSa], out[ROWSa];
     int i;
 
     printf("sgemv_accum8x4....................: ");
-    for(i=0; i<ROWS*COLS; i++) {
+    for(i=0; i<ROWSa*COLSa; i++) {
 	w[i] = i;
     }
-    for(i=0; i<ROWS; i++) {
+    for(i=0; i<ROWSa; i++) {
 	out_nosimd[i] = 0;
 	out[i] = 0;
     }
 
-    for(i=0; i<COLS; i++) {
+    for(i=0; i<COLSa; i++) {
 	x[i] = i+1;
     }
 
-    sgemv_accum8x4_nosimd(out_nosimd, w, ROWS, COLS, 1, x);
-    sgemv_accum8x4(out, w, ROWS, COLS, 1, x);
+    sgemv_accum8x4_nosimd(out_nosimd, w, ROWSa, COLSa, 1, x);
+    sgemv_accum8x4(out, w, ROWSa, COLSa, 1, x);
 
-    for(i=0; i<ROWS; i++) {
+    for(i=0; i<ROWSa; i++) {
 	if (out_nosimd[i] != out[i]) {
 	    printf("fail\n");
-	    for(i=0; i<ROWS; i++) {
+	    for(i=0; i<ROWSa; i++) {
 		printf("%d %f %f\n", i, out_nosimd[i], out[i]);
 		if (out_nosimd[i] != out[i])
 		    return 1;
@@ -165,27 +169,37 @@ int test_sgemv_accum8x4() {
 
 
 int test_sparse_sgemv_accum8x4() {
-    int rows = ROW_STEP*ENTRIES;
-    int indx[] = {1,0,2,0,1};
-    qweight w[ROW_STEP*(1+2)];
-    float x[ENTRIES] = {1,2};
-    float out_nosimd[ROW_STEP*(1+2)], out[ROW_STEP*(1+2)];
-    int i;
+    int indx[(ROWSa*COLSa/32)*(COLSa+1)], *pindx;
+    qweight w[ROWSa*COLSa];
+    float x[COLSa];
+    float out_nosimd[ROWSa], out[ROWSa];
+    int i, j;
 
     printf("sparse_sgemv_accum8x4.............: ");
-    for(i=0; i<ROW_STEP*(1+2); i++) {
+    for(i=0; i<ROWSa*COLSa; i++) {
 	w[i] = i;
+    }
+    for(i=0; i<ROWSa; i++) {
 	out_nosimd[i] = 0;
 	out[i] = 0;
     }
+  
+    for(i=0; i<COLSa; i++) {
+	x[i] = i+1;
+    }
+    pindx = indx;
+    for(i=0; i<(ROWSa*COLSa/32); i++) {
+	*pindx++ = 1;
+	for(j=0; j<COLSa; j++) *pindx++ = j;
+    }
 
-    sparse_sgemv_accum8x4_nosimd(out_nosimd, w, rows, 1, indx, x);
-    sparse_sgemv_accum8x4(out, w, rows, 1, indx, x);
+    sparse_sgemv_accum8x4_nosimd(out_nosimd, w, ROWSa, COLSa, indx, x);
+    sparse_sgemv_accum8x4(out, w, ROWSa, COLSa, indx, x);
 
-    for(i=0; i<ROW_STEP*ENTRIES; i++) {
+    for(i=0; i<ROWSa; i++) {
 	if (out_nosimd[i] != out[i]) {
 	    printf("fail\n");
-	    for(i=0; i<ROW_STEP*ENTRIES; i++) {
+	    for(i=0; i<ROWSa; i++) {
 		printf("%d %f %f\n", i, out_nosimd[i], out[i]);
 		if (out_nosimd[i] != out[i])
 		    return 1;
