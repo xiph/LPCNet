@@ -19,14 +19,16 @@
 #define sgemv_accum16 sgemv_accum16_fast
 #define sparse_sgemv_accum16 sparse_sgemv_accum16_fast
 
-#ifdef __AVX__
+#if defined(__AVX__) || defined(__SSE2__)
 #include "vec_avx.h"
-#ifdef __AVX2__
+#if defined(__AVX2__)
 const char simd[]="AVX2";
-#else
+#elif defined(__AVX__)
 const char simd[]="AVX";
+#else
+const char simd[]="SSE";
 #endif
-#elif __ARM_NEON__
+#elif defined(__ARM_NEON__)
 #include "vec_neon.h"
 const char simd[]="NEON";
 #else
