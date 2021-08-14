@@ -31,6 +31,7 @@ struct LPCNetState {
     float sampling_logit_table[256];
     int frame_count;
     float deemph_mem;
+    float lpc[LPC_ORDER];
 };
 
 struct LPCNetDecState {
@@ -59,6 +60,18 @@ struct LPCNetEncState{
   int exc_mem;
 };
 
+#define PLC_BUF_SIZE (FEATURES_DELAY*FRAME_SIZE + TRAINING_OFFSET)
+struct LPCNetPLCState {
+  LPCNetState lpcnet;
+  LPCNetEncState enc;
+  short pcm[PLC_BUF_SIZE+FRAME_SIZE];
+  int pcm_fill;
+  short synth[FRAME_SIZE];
+  int synth_fill;
+  int skip_analysis;
+  int blend;
+  float features[NB_TOTAL_FEATURES];
+};
 
 extern float ceps_codebook1[];
 extern float ceps_codebook2[];
@@ -74,6 +87,11 @@ void process_superframe(LPCNetEncState *st, unsigned char *buf, FILE *ffeat, int
 void compute_frame_features(LPCNetEncState *st, const float *in);
 
 void decode_packet(float features[4][NB_TOTAL_FEATURES], float *vq_mem, const unsigned char buf[8]);
+
+void run_frame_network(LPCNetState *lpcnet, float *gru_a_condition, float *gru_b_condition, float *lpc, const float *features);
+void lpcnet_synthesize_impl(LPCNetState *lpcnet, const float *features, short *output, int N, int preload);
+void process_single_frame(LPCNetEncState *st, FILE *ffeat);
+int lpcnet_compute_single_frame_features(LPCNetEncState *st, const short *pcm, float features[NB_TOTAL_FEATURES]);
 
 void process_single_frame(LPCNetEncState *st, FILE *ffeat);
 

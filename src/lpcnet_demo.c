@@ -38,6 +38,7 @@
 #define MODE_DECODE 1
 #define MODE_FEATURES 2
 #define MODE_SYNTHESIS 3
+#define MODE_PLC 4
 
 int main(int argc, char **argv) {
     int mode;
@@ -54,6 +55,7 @@ int main(int argc, char **argv) {
     else if (strcmp(argv[1], "-decode") == 0) mode=MODE_DECODE;
     else if (strcmp(argv[1], "-features") == 0) mode=MODE_FEATURES;
     else if (strcmp(argv[1], "-synthesis") == 0) mode=MODE_SYNTHESIS;
+    else if (strcmp(argv[1], "-plc") == 0) mode=MODE_PLC;
     else {
         exit(1);
     }
@@ -123,6 +125,25 @@ int main(int argc, char **argv) {
             fwrite(pcm, sizeof(pcm[0]), LPCNET_FRAME_SIZE, fout);
         }
         lpcnet_destroy(net);
+    } else if (mode == MODE_PLC) {
+        int count=0;
+        int loss=0;
+        LPCNetPLCState *net;
+        net = lpcnet_plc_create();
+        while (1) {
+            short pcm[FRAME_SIZE];
+            size_t ret;
+            ret = fread(pcm, sizeof(pcm[0]), FRAME_SIZE, fin);
+            if (feof(fin) || ret != FRAME_SIZE) break;
+            if (!loss && rand()%15==0) loss = 6;
+            //loss = count%5 == 4;
+            if (loss) lpcnet_plc_conceal(net, pcm);
+            else lpcnet_plc_update(net, pcm);
+            if (loss) loss--;
+            fwrite(pcm, sizeof(pcm[0]), FRAME_SIZE, fout);
+            count++;
+        }
+        lpcnet_plc_destroy(net);
     } else {
         fprintf(stderr, "unknown action\n");
     }
