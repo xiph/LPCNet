@@ -75,7 +75,9 @@ AS_IF([test "$enable_assertions" = "yes"], [
 
 AC_ARG_ENABLE([dot-product],
 	      AS_HELP_STRING([--disable-dot-product], [Disable dot product implementation]),,
-  enable_dot_product=yes)
+  enable_dot_product=no)
+
+AC_DEFINE([END2END], [], [Building an end-to-end model])
 
 AS_IF([test "$enable_dot_product" = "no"], [
        AC_DEFINE([DISABLE_DOT_PROD], [1], [Disable dot product instructions])
