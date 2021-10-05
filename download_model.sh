@@ -7,4 +7,4 @@ if [ ! -f $model ]; then
         wget https://media.xiph.org/lpcnet/data/$model
 fi
 tar xvf $model
-
+touch src/nnet_data.[ch]
