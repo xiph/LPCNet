@@ -140,19 +140,17 @@ pcm_chunk_size = frame_size*feature_chunk_size
 
 # u for unquantised, load 16 bit PCM samples and convert to mu-law
 
-data = np.memmap(pcm_file, dtype='uint8', mode='r')
-nb_frames = (len(data)//(4*pcm_chunk_size)-1)//batch_size*batch_size
+data = np.memmap(pcm_file, dtype='int16', mode='r')
+nb_frames = (len(data)//(2*pcm_chunk_size)-1)//batch_size*batch_size
 
 features = np.memmap(feature_file, dtype='float32', mode='r')
 
 # limit to discrete number of frames
-data = data[4*2*frame_size:]
-data = data[:nb_frames*4*pcm_chunk_size]
+data = data[2*2*frame_size:]
+data = data[:nb_frames*2*pcm_chunk_size]
 
 
-data = np.reshape(data, (nb_frames, pcm_chunk_size, 4))
-#in_data = data[:,:,:3]
-#out_exc = data[:,:,3:4]
+data = np.reshape(data, (nb_frames, pcm_chunk_size, 2))
 
 #print("ulaw std = ", np.std(out_exc))
 

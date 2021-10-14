@@ -231,7 +231,8 @@ class WeightClip(Constraint):
 constraint = WeightClip(0.992)
 
 def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features=20, batch_size=128, training=False, adaptation=False, quantize=False, flag_e2e = False, cond_size=128):
-    pcm = Input(shape=(None, 3), batch_size=batch_size)
+    pcm = Input(shape=(None, 1), batch_size=batch_size)
+    dpcm = Input(shape=(None, 3), batch_size=batch_size)
     feat = Input(shape=(None, nb_used_features), batch_size=batch_size)
     pitch = Input(shape=(None, 1), batch_size=batch_size)
     dec_feat = Input(shape=(None, cond_size))
@@ -256,14 +257,14 @@ def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features=20, batch_s
         cpcm = Reshape((-1, embed_size*3))(embed(pcm))
     else:
         Input_extractor = Lambda(lambda x: K.expand_dims(x[0][:,:,x[1]],axis = -1))
-        error_calc = Lambda(lambda x: tf_l2u(tf_u2l(x[0]) - tf.roll(tf_u2l(x[1]),1,axis = 1)))
+        error_calc = Lambda(lambda x: tf_l2u(x[0] - tf.roll(x[1],1,axis = 1)))
         lpcoeffs = diff_rc2lpc(name = "rc2lpc")(cfeat)
         tensor_preds = diff_pred(name = "lpc2preds")([Input_extractor([pcm,0]),lpcoeffs])
         past_errors = error_calc([Input_extractor([pcm,0]),tensor_preds])
         embed = diff_Embed(name='embed_sig',initializer = PCMInit())
-        cpcm = Concatenate()([Input_extractor([pcm,0]),tensor_preds,past_errors])
+        cpcm = Concatenate()([tf_l2u(Input_extractor([pcm,0])),tf_l2u(tensor_preds),past_errors])
         cpcm = Reshape((-1, embed_size*3))(embed(cpcm))
-        cpcm_decoder = Concatenate()([Input_extractor([pcm,0]),Input_extractor([pcm,1]),Input_extractor([pcm,2])])
+        cpcm_decoder = Concatenate()([Input_extractor([dpcm,0]),Input_extractor([dpcm,1]),Input_extractor([dpcm,2])])
         cpcm_decoder = Reshape((-1, embed_size*3))(embed(cpcm_decoder))
 
     
@@ -315,5 +316,5 @@ def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features=20, batch_s
     dec_gru_out2, state2 = rnn2(Concatenate()([dec_gru_out1, dec_feat]), initial_state=dec_state2)
     dec_ulaw_prob = Lambda(tree_to_pdf_infer)(md(dec_gru_out2))
 
-    decoder = Model([pcm, dec_feat, dec_state1, dec_state2], [dec_ulaw_prob, state1, state2])
+    decoder = Model([dpcm, dec_feat, dec_state1, dec_state2], [dec_ulaw_prob, state1, state2])
     return model, encoder, decoder

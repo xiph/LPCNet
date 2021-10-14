@@ -27,8 +27,8 @@ class LPCNetLoader(Sequence):
 
     def __getitem__(self, index):
         data = self.data[self.indices[index*self.batch_size:(index+1)*self.batch_size], :, :]
-        in_data = data[: , :, :3]
-        out_data = data[: , :, 3:4]
+        in_data = data[: , :, :1]
+        out_data = data[: , :, 1:]
         features = self.features[self.indices[index*self.batch_size:(index+1)*self.batch_size], :, :-16]
         periods = self.periods[self.indices[index*self.batch_size:(index+1)*self.batch_size], :, :]
         outputs = [out_data]
