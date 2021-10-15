@@ -125,7 +125,7 @@ strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
 with strategy.scope():
     model, _, _ = lpcnet.new_lpcnet_model(rnn_units1=args.grua_size, rnn_units2=args.grub_size, batch_size=batch_size, training=True, quantize=quantize, flag_e2e = flag_e2e, cond_size=args.cond_size)
     if not flag_e2e:
-        model.compile(optimizer=opt, loss='sparse_categorical_crossentropy', metrics='sparse_categorical_crossentropy')
+        model.compile(optimizer=opt, loss=metric_cel, metrics=metric_cel)
     else:
         model.compile(optimizer=opt, loss = [interp_mulaw(gamma=gamma), loss_matchlar()], loss_weights = [1.0, 10.0], metrics={'pdf':[metric_cel,metric_icel,metric_exc_sd,metric_oginterploss]})
     model.summary()
@@ -185,7 +185,7 @@ else:
 
 model.save_weights('{}_{}_initial.h5'.format(args.output, args.grua_size))
 
-loader = LPCNetLoader(data, features, periods, batch_size, lpc_out=flag_e2e)
+loader = LPCNetLoader(data, features, periods, batch_size, e2e=flag_e2e)
 
 callbacks = [checkpoint, sparsify, grub_sparsify]
 if args.logdir is not None:

@@ -69,6 +69,7 @@ def metric_icel(y_true, y_pred):
 
 # Non-interpolated (rounded) cross entropy loss metric
 def metric_cel(y_true, y_pred):
+    y_true = tf.cast(y_true, 'float32')
     p = y_pred[:,:,0:1]
     model_out = y_pred[:,:,1:]
     e_gt = tf_l2u(y_true - p)
