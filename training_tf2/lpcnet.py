@@ -250,6 +250,12 @@ def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features=20, batch_s
     fdense1 = Dense(cond_size, activation='tanh', name='feature_dense1')
     fdense2 = Dense(cond_size, activation='tanh', name='feature_dense2')
 
+    if flag_e2e and quantize:
+        fconv1.trainable = False
+        fconv2.trainable = False
+        fdense1.trainable = False
+        fdense2.trainable = False
+
     cfeat = fdense2(fdense1(cfeat))
 
     Input_extractor = Lambda(lambda x: K.expand_dims(x[0][:,:,x[1]],axis = -1))
