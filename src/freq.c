@@ -42,14 +42,13 @@
 
 #define SQUARE(x) ((x)*(x))
 
-static const opus_int16 eband5ms[] = {
-/*0  200 400 600 800  1k 1.2 1.4 1.6  2k 2.4 2.8 3.2  4k 4.8 5.6 6.8  8k*/
-  0,  1,  2,  3,  4,  5,  6,  7,  8, 10, 12, 14, 16, 20, 24, 28, 34, 40
-};
+static const opus_int16 eband20ms[] = {
+/*   0  100  200  300  400  500  600  700  800  900 1050 1200 1350 1550 1750 2000 2300 2600 2950 3350 3850 4400 5050 5850 6800 8000 */
+     0,   2,   4,   6,   8,  10,  12,  14,  16,  18,  21,  24,  27,  31,  35,  40,  46,  52,  59,  67,  77,  88, 101, 117, 136, 160, };
 
 static const float compensation[] = {
-    0.8f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 0.666667f, 0.5f, 0.5f, 0.5f, 0.333333f, 0.25f, 0.25f, 0.2f, 0.166667f, 0.173913f
-};
+1.000000, 1.000000, 1.000000, 1.000000, 1.000000, 1.000000, 1.000000, 1.000000, 1.000000, 0.800000, 0.666667, 0.666667, 0.571429, 0.500000, 0.444444, 0.363636, 0.333333, 0.307692, 0.266667, 0.222222, 0.190476, 0.166667, 0.137931, 0.114286, 0.093023, 0.093023, };
+
 
 typedef struct {
   int init;
@@ -67,12 +66,12 @@ void compute_band_energy(float *bandE, const kiss_fft_cpx *X) {
   {
     int j;
     int band_size;
-    band_size = (eband5ms[i+1]-eband5ms[i])*WINDOW_SIZE_5MS;
+    band_size = eband20ms[i+1]-eband20ms[i];
     for (j=0;j<band_size;j++) {
       float tmp;
       float frac = (float)j/band_size;
-      tmp = SQUARE(X[(eband5ms[i]*WINDOW_SIZE_5MS) + j].r);
-      tmp += SQUARE(X[(eband5ms[i]*WINDOW_SIZE_5MS) + j].i);
+      tmp = SQUARE(X[eband20ms[i] + j].r);
+      tmp += SQUARE(X[eband20ms[i] + j].i);
       sum[i] += (1-frac)*tmp;
       sum[i+1] += frac*tmp;
     }
@@ -92,12 +91,12 @@ void compute_band_corr(float *bandE, const kiss_fft_cpx *X, const kiss_fft_cpx *
   {
     int j;
     int band_size;
-    band_size = (eband5ms[i+1]-eband5ms[i])*WINDOW_SIZE_5MS;
+    band_size = eband20ms[i+1]-eband20ms[i];
     for (j=0;j<band_size;j++) {
       float tmp;
       float frac = (float)j/band_size;
-      tmp = X[(eband5ms[i]*WINDOW_SIZE_5MS) + j].r * P[(eband5ms[i]*WINDOW_SIZE_5MS) + j].r;
-      tmp += X[(eband5ms[i]*WINDOW_SIZE_5MS) + j].i * P[(eband5ms[i]*WINDOW_SIZE_5MS) + j].i;
+      tmp = X[eband20ms[i] + j].r * P[eband20ms[i] + j].r;
+      tmp += X[eband20ms[i] + j].i * P[eband20ms[i] + j].i;
       sum[i] += (1-frac)*tmp;
       sum[i+1] += frac*tmp;
     }
@@ -117,10 +116,10 @@ void interp_band_gain(float *g, const float *bandE) {
   {
     int j;
     int band_size;
-    band_size = (eband5ms[i+1]-eband5ms[i])*WINDOW_SIZE_5MS;
+    band_size = eband20ms[i+1]-eband20ms[i];
     for (j=0;j<band_size;j++) {
       float frac = (float)j/band_size;
-      g[(eband5ms[i]*WINDOW_SIZE_5MS) + j] = (1-frac)*bandE[i] + frac*bandE[i+1];
+      g[eband20ms[i] + j] = (1-frac)*bandE[i] + frac*bandE[i+1];
     }
   }
 }
