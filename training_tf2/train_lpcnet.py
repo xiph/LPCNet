@@ -127,7 +127,7 @@ with strategy.scope():
     if not flag_e2e:
         model.compile(optimizer=opt, loss=metric_cel, metrics=metric_cel)
     else:
-        model.compile(optimizer=opt, loss = [interp_mulaw(gamma=gamma), loss_matchlar()], loss_weights = [1.0, 10.0], metrics={'pdf':[metric_cel,metric_icel,metric_exc_sd,metric_oginterploss]})
+        model.compile(optimizer=opt, loss = [interp_mulaw(gamma=gamma), loss_matchlar()], loss_weights = [1.0, 2.0], metrics={'pdf':[metric_cel,metric_icel,metric_exc_sd,metric_oginterploss]})
     model.summary()
 
 feature_file = args.features
