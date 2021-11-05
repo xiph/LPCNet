@@ -115,7 +115,6 @@ LPCNET_EXPORT int lpcnet_plc_update(LPCNetPLCState *st, short *pcm) {
       st->pcm_fill += FRAME_SIZE;
     }
     //fprintf(stderr, "fill at %d\n", st->pcm_fill);
-    st->skip_analysis--;
   }
   /* Update state. */
   //fprintf(stderr, "update state\n");
@@ -129,6 +128,7 @@ LPCNET_EXPORT int lpcnet_plc_update(LPCNetPLCState *st, short *pcm) {
     float gru_b_condition[3*GRU_B_STATE_SIZE];
     /* FIXME: backtrack state, replace features. */
     run_frame_network(&st->lpcnet, gru_a_condition, gru_b_condition, lpc, st->enc.features[0]);
+    st->skip_analysis--;
   } else {
     for (i=0;i<FRAME_SIZE;i++) st->pcm[PLC_BUF_SIZE+i] = pcm[i];
     RNN_COPY(output, &st->pcm[0], FRAME_SIZE);
