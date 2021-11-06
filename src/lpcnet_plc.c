@@ -61,6 +61,7 @@ LPCNET_EXPORT int lpcnet_plc_update(LPCNetPLCState *st, short *pcm) {
     //fprintf(stderr, "skip update\n");
     if (st->blend) {
 #if 0
+#if 0
       float preemph_pcm[FRAME_SIZE];
       float preemph_synth[FRAME_SIZE];
       float exc[FRAME_SIZE];
@@ -110,6 +111,19 @@ LPCNET_EXPORT int lpcnet_plc_update(LPCNetPLCState *st, short *pcm) {
         pcm[i] = (int)floor(.5 + w*pcm[i] + (1-w)*st->synth[i]);
       }
 #endif
+#else
+      lpcnet_synthesize_blend_impl(&st->lpcnet, pcm, &st->synth[0], st->synth_fill);
+      RNN_COPY(pcm, &st->synth[0], st->synth_fill);
+#if 0
+      for (i=0;i<st->synth_fill;i++) {
+        /* FIXME: Use a better window.*/
+        float w;
+        //w = (float)i*(1.f/st->synth_fill);
+        w = .5 - .5*cos(M_PI*i/st->synth_fill);
+        pcm[i] = (int)floor(.5 + w*pcm[i] + (1-w)*st->synth[i]);
+      }
+#endif
+#endif
       st->blend = 0;
       RNN_COPY(st->pcm, &pcm[st->synth_fill], FRAME_SIZE-st->synth_fill);
       st->pcm_fill = FRAME_SIZE-st->synth_fill;
@@ -148,6 +162,10 @@ LPCNET_EXPORT int lpcnet_plc_update(LPCNetPLCState *st, short *pcm) {
 LPCNET_EXPORT int lpcnet_plc_conceal(LPCNetPLCState *st, short *pcm) {
   short output[FRAME_SIZE];
   st->enc.pcount = 0;
+  /* If we concealed the previous frame, finish synthesizing the rest of the samples. */
+  if (st->blend) {
+    lpcnet_synthesize_tail_impl(&st->lpcnet, st->synth, st->synth_fill, 0);
+  }
   /* FIXME: Copy/predict features. */
   while (st->pcm_fill > 0) {
     //fprintf(stderr, "update state for PLC %d\n", st->pcm_fill);
@@ -164,9 +182,9 @@ LPCNET_EXPORT int lpcnet_plc_conceal(LPCNetPLCState *st, short *pcm) {
   }
   //fprintf(stderr, "conceal\n");
   RNN_COPY(pcm, st->synth, st->synth_fill);
-  lpcnet_synthesize_impl(&st->lpcnet, &st->features[0], output, FRAME_SIZE, 0);
+  lpcnet_synthesize_impl(&st->lpcnet, &st->features[0], output, FRAME_SIZE-st->synth_fill, 0);
   RNN_COPY(&pcm[st->synth_fill], output, FRAME_SIZE-st->synth_fill);
-  RNN_COPY(st->synth, &output[FRAME_SIZE-st->synth_fill], st->synth_fill);
+  /*RNN_COPY(st->synth, &output[FRAME_SIZE-st->synth_fill], st->synth_fill);*/
   {
     int i;
     float x[FRAME_SIZE];
