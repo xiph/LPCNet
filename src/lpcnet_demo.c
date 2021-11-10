@@ -49,6 +49,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "       lpcnet_demo -decode <compressed.lpcnet> <output.pcm>\n");
         fprintf(stderr, "       lpcnet_demo -features <input.pcm> <features.f32>\n");
         fprintf(stderr, "       lpcnet_demo -synthesis <features.f32> <output.pcm>\n");
+        fprintf(stderr, "       lpcnet_demo -plc <input.pcm> <output.pcm>\n");
         return 0;
     }
     if (strcmp(argv[1], "-encode") == 0) mode=MODE_ENCODE;
