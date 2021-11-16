@@ -72,8 +72,6 @@ struct LPCNetPLCState {
   LPCNetEncState enc;
   short pcm[PLC_BUF_SIZE+FRAME_SIZE];
   int pcm_fill;
-  short synth[FRAME_SIZE];
-  int synth_fill;
   int skip_analysis;
   int blend;
   float features[NB_TOTAL_FEATURES];
