@@ -8,7 +8,6 @@ include_HEADERS = include/lpcnet.h
 
 lib_LTLIBRARIES = liblpcnet.la
 noinst_HEADERS = src/arch.h  \
-		 src/celt_lpc.h  \
 		 src/common.h  \
 		 src/freq.h  \
 		 src/_kiss_fft_guts.h  \
@@ -36,7 +35,6 @@ liblpcnet_la_SOURCES = \
 	src/pitch.c \
 	src/freq.c \
 	src/kiss_fft.c \
-	src/celt_lpc.c \
 	src/lpcnet_plc.c
 
 liblpcnet_la_LIBADD = $(DEPS_LIBS) $(lrintf_lib) $(LIBM)
@@ -49,12 +47,12 @@ lpcnet_demo_SOURCES = src/lpcnet_demo.c
 lpcnet_demo_LDADD = liblpcnet.la
 
 
-#DUMP_SOURCES = src/freq.c src/kiss_fft.c src/pitch.c src/celt_lpc.c src/lpcnet_dec.c src/lpcnet_enc.c src/ceps_codebooks.c src/common.c
+#DUMP_SOURCES = src/freq.c src/kiss_fft.c src/pitch.c src/lpcnet_dec.c src/lpcnet_enc.c src/ceps_codebooks.c src/common.c
 #DUMP_OBJ = $(DUMP_SOURCES:.c=.lo)
 #dump_data_SOURCES = src/dump_data.c
 #dump_data_LDADD = $(DUMP_OBJ) $(LIBM)
 
-dump_data_SOURCES = src/common.c src/dump_data.c src/freq.c src/kiss_fft.c src/pitch.c src/celt_lpc.c src/lpcnet_dec.c src/lpcnet_enc.c src/ceps_codebooks.c
+dump_data_SOURCES = src/common.c src/dump_data.c src/freq.c src/kiss_fft.c src/pitch.c src/lpcnet_dec.c src/lpcnet_enc.c src/ceps_codebooks.c
 dump_data_LDADD = $(LIBM)
 dump_data_CFLAGS = $(AM_CFLAGS)
 
