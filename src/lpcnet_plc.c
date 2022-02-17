@@ -78,7 +78,7 @@ void clear_state(LPCNetPLCState *st) {
 }
 
 #define DC_CONST 0.003
-
+#define BLEND_SIZE (FRAME_SIZE-TRAINING_OFFSET)
 #if 1
 
 /* In this causal version of the code, the DNN model implemented by compute_plc_pred()
@@ -103,13 +103,95 @@ LPCNET_EXPORT int lpcnet_plc_update(LPCNetPLCState *st, short *pcm) {
   if (st->skip_analysis) {
     /*fprintf(stderr, "skip update\n");*/
     if (st->blend) {
-      short tmp[FRAME_SIZE-TRAINING_OFFSET];
+      short tmp[FRAME_SIZE+MAX_SYNC];
       float zeros[2*NB_BANDS+NB_FEATURES+1] = {0};
       RNN_COPY(zeros, plc_features, 2*NB_BANDS);
       zeros[2*NB_BANDS+NB_FEATURES] = 1;
       compute_plc_pred(&st->plc_net, st->features, zeros);
       if (st->enable_blending) {
         LPCNetState copy;
+#if 1
+        short syn[FRAME_SIZE+2*MAX_SYNC];
+        short pre[FRAME_SIZE];
+        float maxcorr=-10;
+        int delay = 0;
+        int start=0;
+        copy = st->lpcnet;
+        lpcnet_synthesize_impl(&st->lpcnet, &st->features[0], tmp, FRAME_SIZE+MAX_SYNC, 0);
+        RNN_COPY(syn, st->syn_buf, MAX_SYNC);
+        RNN_COPY(&syn[MAX_SYNC], tmp, FRAME_SIZE+MAX_SYNC);
+        for (i=FRAME_SIZE+2*MAX_SYNC-1;i>=1;i--) {
+          syn[i] = syn[i] - PREEMPHASIS*syn[i-1];
+        }
+        for (i=1;i<FRAME_SIZE;i++) {
+          pre[i] = pcm[i] - PREEMPHASIS*pcm[i-1];
+        }
+        pre[0] = syn[0] = 0;
+        //for (i=0;i<FRAME_SIZE;i++) printf("%d ", pre[i]);
+        //for (i=0;i<FRAME_SIZE+2*MAX_SYNC;i++) printf("%d ", syn[i]);
+        //printf("\n");
+        for (i=0;i<2*MAX_SYNC;i++)
+        {
+          float Rxx=0, Rxy=0, Ryy=0;
+          int j;
+          for (j=0;j<FRAME_SIZE;j++) {
+            float x, y;
+            x = syn[i+j];
+            y = pre[j];
+            Rxx += x*x;
+            Rxy += x*y;
+            Ryy += y*y;
+          }
+          float corr = Rxy/sqrt(1e-10+Rxx*Ryy) - .002*abs(i-MAX_SYNC);
+          if (corr > maxcorr) {
+            maxcorr = corr;
+            delay = i-MAX_SYNC;
+          }
+          //printf("%f ", corr);
+        }
+        //printf("\n");
+#if 1
+        if (maxcorr > .5 && abs(delay)<20)
+        {
+          float ratio = 1 + (float)delay/FRAME_SIZE;
+          for (i=0;i<FRAME_SIZE;i++) {
+            int j;
+            float frac;
+            float pos = ratio*i;
+            j = (int)floor(pos);
+            frac = pos-j;
+            syn[i] = (int)floor(.5 + (1-frac)*tmp[j] + frac*tmp[j+1]);
+            if (j <= FRAME_SIZE-2) {
+              pre[FRAME_SIZE-1-i] = (int)floor(.5+ (1-frac)*pcm[FRAME_SIZE-1-j] + frac*pcm[FRAME_SIZE-1-j-1]);
+              start = FRAME_SIZE-1-i;
+            } else {
+              pre[FRAME_SIZE-1-i] = 0;
+            }
+          }
+          /*for (i=0;i<FRAME_SIZE;i++) {
+            printf("%d %d %d %d ", tmp[i], pcm[i], syn[i], pre[i]);
+          }
+          printf("\n");*/
+          //printf("%d\n", start);
+          for (i=0;i<FRAME_SIZE;i++) {
+            pcm[i] = pre[i];
+            tmp[i] = syn[i];
+          }
+        }
+        for (i=0;i<start;i++) pcm[i] = tmp[i];
+        for (i=0;i<FRAME_SIZE-TRAINING_OFFSET-start;i++) {
+          float w;
+          w = .5 - .5*cos(M_PI*i/(FRAME_SIZE-TRAINING_OFFSET-start));
+          pcm[start+i] = (int)floor(.5 + w*pcm[start+i] + (1-w)*tmp[start+i]);
+        }
+#else
+        for (i=0;i<FRAME_SIZE-TRAINING_OFFSET;i++) {
+          float w;
+          w = .5 - .5*cos(M_PI*i/(FRAME_SIZE-TRAINING_OFFSET));
+          pcm[i] = (int)floor(.5 + w*pcm[i] + (1-w)*tmp[i]);
+        }
+#endif
+#else
         copy = st->lpcnet;
         lpcnet_synthesize_impl(&st->lpcnet, &st->features[0], tmp, FRAME_SIZE-TRAINING_OFFSET, 0);
         for (i=0;i<FRAME_SIZE-TRAINING_OFFSET;i++) {
@@ -117,6 +199,7 @@ LPCNET_EXPORT int lpcnet_plc_update(LPCNetPLCState *st, short *pcm) {
           w = .5 - .5*cos(M_PI*i/(FRAME_SIZE-TRAINING_OFFSET));
           pcm[i] = (int)floor(.5 + w*pcm[i] + (1-w)*tmp[i]);
         }
+#endif
         st->lpcnet = copy;
         lpcnet_synthesize_impl(&st->lpcnet, &st->features[0], pcm, FRAME_SIZE-TRAINING_OFFSET, FRAME_SIZE-TRAINING_OFFSET);
       } else {
@@ -199,6 +282,8 @@ LPCNET_EXPORT int lpcnet_plc_conceal(LPCNetPLCState *st, short *pcm) {
   }
   st->loss_count++;
   st->blend = 1;
+  RNN_COPY(st->syn_buf, &pcm[FRAME_SIZE-MAX_SYNC], MAX_SYNC);
+
   if (st->remove_dc) {
     for (i=0;i<FRAME_SIZE;i++) {
       pcm[i] += (int)floor(.5 + st->dc_mem);

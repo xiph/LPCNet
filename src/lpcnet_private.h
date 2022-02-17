@@ -68,10 +68,13 @@ struct LPCNetEncState{
 };
 
 #define PLC_BUF_SIZE (FEATURES_DELAY*FRAME_SIZE + TRAINING_OFFSET)
+#define MAX_SYNC 40
+
 struct LPCNetPLCState {
   LPCNetState lpcnet;
   LPCNetEncState enc;
   short pcm[PLC_BUF_SIZE+FRAME_SIZE];
+  short syn_buf[MAX_SYNC];
   int pcm_fill;
   int skip_analysis;
   int blend;
