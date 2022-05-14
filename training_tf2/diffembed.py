@@ -19,7 +19,7 @@ class diff_Embed(Layer):
         - pcm_init: boolean
             Initialized for the embedding matrix
     """
-    def __init__(self, units=128, dict_size = 256, pcm_init = True, initializer = None, **kwargs):
+    def __init__(self, units=128, dict_size = 256, pcm_init = True, initializer = "uniform", **kwargs):
         super(diff_Embed, self).__init__(**kwargs)
         self.units = units
         self.dict_size = dict_size
@@ -37,7 +37,7 @@ class diff_Embed(Layer):
         alpha = tf.expand_dims(alpha,axis = -1)
         alpha = tf.tile(alpha,[1,1,1,self.units])
         inputs = tf.cast(inputs,'int32')
-        M = (1 - alpha)*tf.gather(self.w,inputs) + alpha*tf.gather(self.w,tf.clip_by_value(inputs + 1, 0, 255))
+        M = (1 - alpha)*tf.gather(self.w,inputs) + alpha*tf.gather(self.w,tf.clip_by_value(inputs + 1, 0, self.dict_size-1))
         return M
 
     def get_config(self):

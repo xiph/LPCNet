@@ -235,7 +235,6 @@ def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features=20, batch_s
     pcm = Input(shape=(None, 1), batch_size=batch_size)
     dpcm = Input(shape=(None, 3), batch_size=batch_size)
     feat = Input(shape=(None, nb_used_features), batch_size=batch_size)
-    pitch = Input(shape=(None, 1), batch_size=batch_size)
     dec_feat = Input(shape=(None, cond_size))
     dec_state1 = Input(shape=(rnn_units1,))
     dec_state2 = Input(shape=(rnn_units2,))
@@ -243,8 +242,11 @@ def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features=20, batch_s
     padding = 'valid' if training else 'same'
     fconv1 = Conv1D(cond_size, 3, padding=padding, activation='swish', name='feature_conv1')
     fconv2 = Conv1D(cond_size, 3, padding=padding, activation='swish', name='feature_conv2')
-    pembed = Embedding(256, 64, name='embed_pitch')
-    cat_feat = Concatenate()([feat, Reshape((-1, 64))(pembed(pitch))])
+    #pembed = Embedding(256, 64, name='embed_pitch')
+    pitch_init = tf.keras.initializers.RandomUniform(minval=-.05, maxval=.05)
+    pembed = diff_Embed(dict_size = 256, units = 64, name='embed_pitch', initializer=pitch_init)
+    p = Lambda(lambda p: 50*p[:,:,nb_used_features-2:nb_used_features-1]+100)(feat)
+    cat_feat = Concatenate()([feat, Reshape((-1, 64))(pembed(p))])
 
     cfeat = fconv2(fconv1(cat_feat))
 
@@ -308,19 +310,19 @@ def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features=20, batch_s
     
     m_out = Concatenate(name='pdf')([tensor_preds,real_preds,ulaw_prob])
     if not flag_e2e:
-        model = Model([pcm, feat, pitch, lpcoeffs], m_out)
+        model = Model([pcm, feat, lpcoeffs], m_out)
     else:
-        model = Model([pcm, feat, pitch], [m_out, cfeat])
+        model = Model([pcm, feat], [m_out, cfeat])
     model.rnn_units1 = rnn_units1
     model.rnn_units2 = rnn_units2
     model.nb_used_features = nb_used_features
     model.frame_size = frame_size
     
     if not flag_e2e:
-        encoder = Model([feat, pitch], cfeat)
+        encoder = Model([feat], cfeat)
         dec_rnn_in = Concatenate()([cpcm_decoder, dec_feat])
     else:
-        encoder = Model([feat, pitch], [cfeat,lpcoeffs])
+        encoder = Model([feat], [cfeat,lpcoeffs])
         dec_rnn_in = Concatenate()([cpcm_decoder, dec_feat])
     dec_gru_out1, state1 = rnn(dec_rnn_in, initial_state=dec_state1)
     dec_gru_out2, state2 = rnn2(Concatenate()([dec_gru_out1, dec_feat]), initial_state=dec_state2)
