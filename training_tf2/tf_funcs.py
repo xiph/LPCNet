@@ -27,7 +27,7 @@ def tf_u2l(u):
 
 # Differentiable Prediction Layer
 # Computes the LP prediction from the input lag signal and the LP coefficients
-# The inputs xt and lpc conform with the shapes in lpcnet.py (the '2400' is coded keeping this in mind)
+# The inputs xt and lpc conform with the shapes in lpcnet.py (the '2560' is coded keeping this in mind)
 class diff_pred(Layer):
     def call(self, inputs, lpcoeffs_N = 16, frame_size = 160):
         xt = inputs[0]
@@ -35,7 +35,7 @@ class diff_pred(Layer):
 
         rept = Lambda(lambda x: K.repeat_elements(x , frame_size, 1))
         zpX = Lambda(lambda x: K.concatenate([0*x[:,0:lpcoeffs_N,:], x],axis = 1))
-        cX = Lambda(lambda x: K.concatenate([x[:,(lpcoeffs_N - i):(lpcoeffs_N - i + 2400),:] for i in range(lpcoeffs_N)],axis = 2))
+        cX = Lambda(lambda x: K.concatenate([x[:,(lpcoeffs_N - i):(lpcoeffs_N - i + 2560),:] for i in range(lpcoeffs_N)],axis = 2))
         
         pred = -Multiply()([rept(lpc),cX(zpX(xt))])
 

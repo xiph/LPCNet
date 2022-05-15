@@ -153,7 +153,7 @@ pcm_file = args.data     # 16 bit unsigned short PCM samples
 frame_size = model.frame_size
 nb_features = model.nb_used_features + lpc_order
 nb_used_features = model.nb_used_features
-feature_chunk_size = 15
+feature_chunk_size = 16
 pcm_chunk_size = frame_size*feature_chunk_size
 
 # u for unquantised, load 16 bit PCM samples and convert to mu-law
@@ -176,10 +176,6 @@ sizeof = features.strides[-1]
 features = np.lib.stride_tricks.as_strided(features, shape=(nb_frames, feature_chunk_size+4, nb_features),
                                            strides=(feature_chunk_size*nb_features*sizeof, nb_features*sizeof, sizeof))
 #features = features[:, :, :nb_used_features]
-
-
-periods = (.1 + 50*features[:,:,nb_used_features-2:nb_used_features-1]+100).astype('int16')
-#periods = np.minimum(periods, 255)
 
 # dump models to disk as we go
 checkpoint = ModelCheckpoint('{}_{}_{}.h5'.format(args.output, args.grua_size, '{epoch:02d}'))

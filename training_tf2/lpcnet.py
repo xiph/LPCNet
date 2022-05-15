@@ -58,8 +58,8 @@ def tree_to_pdf(p, samples):
          * interleave(p[:,:,16:32], samples) * interleave(p[:,:,32:64], samples) * interleave(p[:,:,64:128], samples) * interleave(p[:,:,128:256], samples)
 
 def tree_to_pdf_train(p):
-    #FIXME: try not to hardcode the 2400 samples (15 frames * 160 samples/frame)
-    return tree_to_pdf(p, 2400)
+    #FIXME: try not to hardcode the 2560 samples (16 frames * 160 samples/frame)
+    return tree_to_pdf(p, 2560)
 
 def tree_to_pdf_infer(p):
     return tree_to_pdf(p, 1)
