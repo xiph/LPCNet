@@ -37,6 +37,9 @@ class LPCNetLoader(Sequence):
             outputs.append(lpc2rc(lpc))
         else:
             inputs.append(lpc)
+        outputs.append(features)
+        outputs.append(out_data)
+        outputs.append(out_data)
         return (inputs, outputs)
 
     def __len__(self):

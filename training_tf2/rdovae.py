@@ -101,6 +101,14 @@ def safelog2(x):
     log2_e = 1.4427
     return log2_e*tf.math.log(eps+x)
 
+def feat_dist_loss(y_true,y_pred):
+    ceps = y_pred[:,:,:18] - y_true[:,:,:18]
+    pitch = y_pred[:,:,18:19] - y_true[:,:,18:19]
+    corr = y_pred[:,:,19:] - y_true[:,:,19:]
+    pitch_weight = K.square(K.maximum(0., y_true[:,:,19:]+.5))
+    return K.mean(K.square(ceps) + 10*(1/18.)*K.abs(pitch)*pitch_weight + (1/18.)*K.square(corr))
+
+
 def sq_rate_loss(y_true,y_pred):
     log2_e = 1.4427
     n = y_pred.shape[-1]//3
@@ -133,6 +141,8 @@ def sq2_rate_loss(y_true,y_pred):
     r = y_pred[:,:,2*n:]
     p0 = y_pred[:,:,n:2*n]
     p0 = 1-r**(.5+.5*p0)
+    #theta = K.minimum(1., .5 + 0*p0 - 0.04*tf.math.log(r))
+    #p0 = 1-r**theta
     y_pred = tf.round(y_pred[:,:,:n])
     y0 = K.maximum(0., 1. - K.abs(y_pred))**2
     rate = -y0*safelog2(p0*r**K.abs(y_pred)) - (1-y0)*safelog2(.5*(1-p0)*(1-r)*r**(K.abs(y_pred)-1))

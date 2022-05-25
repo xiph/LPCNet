@@ -98,14 +98,14 @@ opt = Adam(lr, decay=decay, beta_2=0.99)
 strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
 
 with strategy.scope():
-    model, encoder, decoder = rdovae.new_rdovae_model(nb_used_features=18, nb_bits=72, batch_size=batch_size, cond_size=args.cond_size)
-    model.compile(optimizer=opt, loss=['mse', rdovae.sq1_rate_loss, rdovae.sq2_rate_loss], loss_weights=[1.0, .0125/17, .001], metrics={'output':'mse', 'concatenate_2':rdovae.sq_rate_metric})
+    model, encoder, decoder = rdovae.new_rdovae_model(nb_used_features=20, nb_bits=80, batch_size=batch_size, cond_size=args.cond_size)
+    model.compile(optimizer=opt, loss=[rdovae.feat_dist_loss, rdovae.sq1_rate_loss, rdovae.sq2_rate_loss], loss_weights=[1.0, .004, .0001], metrics={'output':'mse', 'concatenate_2':rdovae.sq_rate_metric})
     model.summary()
 
 lpc_order = 16
 
 feature_file = args.features
-nb_features = model.nb_used_features + 2 + lpc_order
+nb_features = model.nb_used_features + lpc_order
 nb_used_features = model.nb_used_features
 sequence_size = args.seq_length
 

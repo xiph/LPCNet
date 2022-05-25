@@ -244,7 +244,7 @@ def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features=20, batch_s
     fconv2 = Conv1D(cond_size, 3, padding=padding, activation='swish', name='feature_conv2')
     #pembed = Embedding(256, 64, name='embed_pitch')
     pitch_init = tf.keras.initializers.RandomUniform(minval=-.05, maxval=.05)
-    pembed = diff_Embed(dict_size = 256, units = 64, name='embed_pitch', initializer=pitch_init)
+    pembed = diff_Embed(min_value = 32, dict_size = 256, units = 64, name='embed_pitch', initializer=pitch_init)
     p = Lambda(lambda p: 50*p[:,:,nb_used_features-2:nb_used_features-1]+100)(feat)
     cat_feat = Concatenate()([feat, Reshape((-1, 64))(pembed(p))])
 

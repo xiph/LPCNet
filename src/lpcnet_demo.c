@@ -153,8 +153,8 @@ int main(int argc, char **argv) {
             float features[NB_FEATURES];
             short pcm[LPCNET_FRAME_SIZE];
             size_t ret;
-            ret = fread(in_features, sizeof(features[0]), NB_TOTAL_FEATURES, fin);
-            if (feof(fin) || ret != NB_TOTAL_FEATURES) break;
+            ret = fread(in_features, sizeof(features[0]), 20, fin);
+            if (feof(fin) || ret != 20) break;
             RNN_COPY(features, in_features, NB_FEATURES);
             lpcnet_synthesize(net, features, pcm, LPCNET_FRAME_SIZE);
             fwrite(pcm, sizeof(pcm[0]), LPCNET_FRAME_SIZE, fout);
