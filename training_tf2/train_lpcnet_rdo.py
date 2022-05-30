@@ -142,7 +142,7 @@ with strategy.scope():
     pcm_pdf, rcs = model([pcm, qfeatures])
     lpcnet_rdo = Model([pcm, feat], [pcm_pdf, rcs, qfeatures, e, e2])
 
-    lpcnet_rdo.compile(optimizer=opt, loss = [interp_mulaw(gamma=gamma), loss_matchlar(), rdovae.feat_dist_loss, rdovae.sq1_rate_loss, rdovae.sq2_rate_loss], loss_weights = [0.1, 0.00, 1.0, .0007, .00007])
+    lpcnet_rdo.compile(optimizer=opt, loss = [interp_mulaw(gamma=gamma), loss_matchlar(), rdovae.feat_dist_loss, rdovae.sq1_rate_loss, rdovae.sq2_rate_loss], loss_weights = [0.2, 0.00, .3, .0007, .00007])
 
     #lpcnet_rdo.compile(optimizer=opt, loss = [interp_mulaw(gamma=gamma), loss_matchlar(), rdovae.sq1_rate_loss, rdovae.sq2_rate_loss], loss_weights = [1.0, 2.0, .001, .0001], metrics={'pdf':[metric_cel,metric_icel,metric_exc_sd,metric_oginterploss]})
     lpcnet_rdo.summary()

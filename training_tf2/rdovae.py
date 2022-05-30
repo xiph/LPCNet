@@ -103,7 +103,7 @@ def safelog2(x):
 
 def feat_dist_loss(y_true,y_pred):
     ceps = y_pred[:,:,:18] - y_true[:,:,:18]
-    pitch = y_pred[:,:,18:19] - y_true[:,:,18:19]
+    pitch = 2*(y_pred[:,:,18:19] - y_true[:,:,18:19])/(y_true[:,:,18:19] + 2)
     corr = y_pred[:,:,19:] - y_true[:,:,19:]
     pitch_weight = K.square(K.maximum(0., y_true[:,:,19:]+.5))
     return K.mean(K.square(ceps) + 10*(1/18.)*K.abs(pitch)*pitch_weight + (1/18.)*K.square(corr))
@@ -182,12 +182,12 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, batch_size=128, cond_size=
     enc_dense3 = Dense(cond_size2, activation='tanh', name='enc_dense3')
     enc_dense4 = Dense(cond_size, activation='tanh', name='enc_dense4')
     enc_dense5 = Dense(cond_size2, activation='tanh', name='enc_dense5')
-    enc_dense6 = Dense(cond_size, activation='tanh', name='enc_dense6')
-    enc_dense7 = Dense(cond_size, activation='tanh', name='enc_dense7')
-    enc_dense8 = Dense(cond_size, activation='tanh', name='enc_dense8')
-    #enc_dense6 = Bidirectional(CuDNNGRU(cond_size, return_sequences=True, name='enc_dense6'))
-    #enc_dense7 = Bidirectional(CuDNNGRU(cond_size, return_sequences=True, name='enc_dense7'))
-    #enc_dense8 = Bidirectional(CuDNNGRU(cond_size, return_sequences=True, name='enc_dense8'))
+    #enc_dense6 = Dense(cond_size, activation='tanh', name='enc_dense6')
+    #enc_dense7 = Dense(cond_size, activation='tanh', name='enc_dense7')
+    #enc_dense8 = Dense(cond_size, activation='tanh', name='enc_dense8')
+    enc_dense6 = (CuDNNGRU(cond_size, return_sequences=True, name='enc_dense6'))
+    enc_dense7 = (CuDNNGRU(cond_size, return_sequences=True, name='enc_dense7'))
+    enc_dense8 = (CuDNNGRU(cond_size, return_sequences=True, name='enc_dense8'))
 
     #bits_dense = Dense(nb_bits, activation='linear', name='bits_dense', activity_regularizer=binary_reg(4.25))
     #bits_dense = Dense(nb_bits, activation='tanh', name='bits_dense')
@@ -216,7 +216,8 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, batch_size=128, cond_size=
     #noisy_bits = noise_lambda(bits)
     
     
-    dec_dense1 = Dense(cond_size2, activation='tanh', name='dec_dense1')
+    #dec_dense1 = Dense(cond_size2, activation='tanh', name='dec_dense1')
+    dec_dense1 = Conv1D(cond_size2, 2, padding='causal', activation='tanh', name='dec_dense1')
     dec_dense2 = Dense(cond_size, activation='tanh', name='dec_dense2')
     dec_dense3 = Dense(cond_size2, activation='tanh', name='dec_dense3')
     dec_dense4 = Dense(cond_size, activation='tanh', name='dec_dense4')

@@ -99,7 +99,7 @@ strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
 
 with strategy.scope():
     model, encoder, decoder = rdovae.new_rdovae_model(nb_used_features=20, nb_bits=80, batch_size=batch_size, cond_size=args.cond_size)
-    model.compile(optimizer=opt, loss=[rdovae.feat_dist_loss, rdovae.sq1_rate_loss, rdovae.sq2_rate_loss], loss_weights=[1.0, .004, .0001], metrics={'output':'mse', 'concatenate_2':rdovae.sq_rate_metric})
+    model.compile(optimizer=opt, loss=[rdovae.feat_dist_loss, rdovae.sq1_rate_loss, rdovae.sq2_rate_loss], loss_weights=[1.0, .0007, .00007], metrics={'output':'mse', 'concatenate_2':rdovae.sq_rate_metric})
     model.summary()
 
 lpc_order = 16
