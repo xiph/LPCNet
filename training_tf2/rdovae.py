@@ -173,21 +173,21 @@ def rate_metric(y_true,y_pred):
     rate = C + (n-1)*log2_e*tf.math.log(k + .112*n**2/(n/1.8+k) )
     return K.mean(rate)
 
-def new_rdovae_model(nb_used_features=20, nb_bits=17, batch_size=128, cond_size=128, cond_size2=128):
+def new_rdovae_model(nb_used_features=20, nb_bits=17, batch_size=128, cond_size=128, cond_size2=256):
     feat = Input(shape=(None, nb_used_features), batch_size=batch_size)
 
 
     enc_dense1 = Dense(cond_size2, activation='tanh', name='enc_dense1')
-    enc_dense2 = Dense(cond_size, activation='tanh', name='enc_dense2')
+    enc_dense2 = CuDNNGRU(cond_size, return_sequences=True, name='enc_dense2')
     enc_dense3 = Dense(cond_size2, activation='tanh', name='enc_dense3')
-    enc_dense4 = Dense(cond_size, activation='tanh', name='enc_dense4')
+    enc_dense4 = CuDNNGRU(cond_size, return_sequences=True, name='enc_dense4')
     enc_dense5 = Dense(cond_size2, activation='tanh', name='enc_dense5')
+    enc_dense6 = CuDNNGRU(cond_size, return_sequences=True, name='enc_dense6')
     #enc_dense6 = Dense(cond_size, activation='tanh', name='enc_dense6')
-    #enc_dense7 = Dense(cond_size, activation='tanh', name='enc_dense7')
-    #enc_dense8 = Dense(cond_size, activation='tanh', name='enc_dense8')
-    enc_dense6 = (CuDNNGRU(cond_size, return_sequences=True, name='enc_dense6'))
-    enc_dense7 = (CuDNNGRU(cond_size, return_sequences=True, name='enc_dense7'))
-    enc_dense8 = (CuDNNGRU(cond_size, return_sequences=True, name='enc_dense8'))
+    enc_dense7 = Dense(cond_size, activation='tanh', name='enc_dense7')
+    enc_dense8 = Dense(cond_size, activation='tanh', name='enc_dense8')
+    #enc_dense7 = (CuDNNGRU(cond_size, return_sequences=True, name='enc_dense7'))
+    #enc_dense8 = (CuDNNGRU(cond_size, return_sequences=True, name='enc_dense8'))
 
     #bits_dense = Dense(nb_bits, activation='linear', name='bits_dense', activity_regularizer=binary_reg(4.25))
     #bits_dense = Dense(nb_bits, activation='tanh', name='bits_dense')
@@ -216,13 +216,13 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, batch_size=128, cond_size=
     #noisy_bits = noise_lambda(bits)
     
     
-    #dec_dense1 = Dense(cond_size2, activation='tanh', name='dec_dense1')
-    dec_dense1 = Conv1D(cond_size2, 2, padding='causal', activation='tanh', name='dec_dense1')
+    dec_dense1 = Dense(cond_size2, activation='tanh', name='dec_dense1')
+    #dec_dense1 = Conv1D(cond_size2, 2, padding='causal', activation='tanh', name='dec_dense1')
     dec_dense2 = Dense(cond_size, activation='tanh', name='dec_dense2')
-    dec_dense3 = Dense(cond_size2, activation='tanh', name='dec_dense3')
-    dec_dense4 = Dense(cond_size, activation='tanh', name='dec_dense4')
-    dec_dense5 = Dense(cond_size2, activation='tanh', name='dec_dense5')
-    dec_dense6 = Dense(cond_size2, activation='tanh', name='dec_dense6')
+    dec_dense3 = Conv1D(cond_size2, 2, padding='causal', activation='tanh', name='dec_dense3')
+    dec_dense4 = CuDNNGRU(cond_size, return_sequences=True, name='dec_dense4')
+    dec_dense5 = CuDNNGRU(cond_size, return_sequences=True, name='dec_dense5')
+    dec_dense6 = CuDNNGRU(cond_size, return_sequences=True, name='dec_dense6')
     dec_dense7 = Dense(cond_size2, activation='tanh', name='dec_dense7')
     dec_dense8 = Dense(cond_size2, activation='tanh', name='dec_dense8')
     #dec_dense6 = Bidirectional(CuDNNGRU(cond_size, return_sequences=True, name='dec_dense6'))
