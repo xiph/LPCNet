@@ -27,9 +27,6 @@
 '''
 
 # Train an LPCNet model
-import tensorflow as tf
-strategy = tf.distribute.MultiWorkerMirroredStrategy()
-
 
 import argparse
 #from plc_loader import PLCLoader
@@ -38,7 +35,7 @@ parser = argparse.ArgumentParser(description='Train a quantization model')
 
 parser.add_argument('features', metavar='<features file>', help='binary features file (float32)')
 parser.add_argument('output', metavar='<output>', help='trained model file (.h5)')
-parser.add_argument('--model', metavar='<model>', default='rdovae', help='PLC model python definition (without .py)')
+parser.add_argument('--model', metavar='<model>', default='pvqvae', help='PLC model python definition (without .py)')
 group1 = parser.add_mutually_exclusive_group()
 group1.add_argument('--quantize', metavar='<input weights>', help='quantize model')
 group1.add_argument('--retrain', metavar='<input weights>', help='continue training model')
@@ -54,7 +51,7 @@ parser.add_argument('--logdir', metavar='<log dir>', help='directory for tensorb
 args = parser.parse_args()
 
 import importlib
-rdovae = importlib.import_module(args.model)
+pvqvae = importlib.import_module(args.model)
 
 import sys
 import numpy as np
@@ -63,6 +60,7 @@ from tensorflow.keras.callbacks import ModelCheckpoint, CSVLogger
 import tensorflow.keras.backend as K
 import h5py
 
+import tensorflow as tf
 #gpus = tf.config.experimental.list_physical_devices('GPU')
 #if gpus:
 #  try:
@@ -97,10 +95,11 @@ if retrain:
 
 
 opt = Adam(lr, decay=decay, beta_2=0.99)
+strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
 
 with strategy.scope():
-    model, encoder, decoder = rdovae.new_rdovae_model(nb_used_features=20, nb_bits=80, batch_size=batch_size, cond_size=args.cond_size)
-    model.compile(optimizer=opt, loss=[rdovae.feat_dist_loss, rdovae.sq1_rate_loss, rdovae.sq2_rate_loss], loss_weights=[1.0, .001, .00007], metrics={'output':'mse', 'hard_bits':rdovae.sq_rate_metric})
+    model, encoder, decoder = pvqvae.new_pvqvae_model(nb_used_features=20, nb_bits=40, batch_size=batch_size, cond_size=args.cond_size)
+    model.compile(optimizer=opt, loss=pvqvae.feat_dist_loss, loss_weights=[1.0, .0007, .00007], metrics={'output':'mse'})
     model.summary()
 
 lpc_order = 16

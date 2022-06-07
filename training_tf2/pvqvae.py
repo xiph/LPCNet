@@ -81,9 +81,43 @@ def soft_quantize(x):
     x = x - (.25/np.math.pi)*tf.math.sin(2*np.math.pi*x)    
     return x
 
+def pvq_quant(x, k):
+    x = x/tf.reduce_sum(tf.abs(x), axis=-1, keepdims=True)
+    kx = k*x
+    y = tf.round(kx)
+    newk = k
+
+    for j in range(10):
+        #print("y = ", y)
+        #print("iteration ", j)
+        abs_y = tf.abs(y)
+        abs_kx = tf.abs(kx)
+        kk=tf.reduce_sum(abs_y, axis=-1)
+        #print("sums = ", kk)
+        plus = 1.0001*tf.reduce_min((abs_y+.5)/(abs_kx+1e-15), axis=-1)
+        minus = .9999*tf.reduce_max((abs_y-.5)/(abs_kx+1e-15), axis=-1)
+        #print("plus = ", plus)
+        #print("minus = ", minus)
+        factor = tf.where(kk>k, minus, plus)
+        factor = tf.where(kk==k, tf.ones_like(factor), factor)
+        #print("scale = ", factor)
+        factor = tf.expand_dims(factor, axis=-1)
+        #newk = newk * (k/kk)**.2
+        newk = newk*factor
+        kx = newk*x
+        #print("newk = ", newk)
+        #print("unquantized = ", newk*x)
+        y = tf.round(kx)
+
+    #print(y)
+    
+    return y
+
 def hard_quantize(x):
-    #x = soft_quantize(x)
-    quantized = tf.round(x)
+    k=25
+    x = x/(1e-15+tf.norm(x, axis=-1,keepdims=True))
+    quantized = pvq_quant(x, k)
+    quantized = quantized/(1e-15+tf.norm(quantized, axis=-1,keepdims=True))
     return x + tf.stop_gradient(quantized - x)
 
 def rate_loss(y_true,y_pred):
@@ -109,85 +143,22 @@ def feat_dist_loss(y_true,y_pred):
     return K.mean(K.square(ceps) + 10*(1/18.)*K.abs(pitch)*pitch_weight + (1/18.)*K.square(corr))
 
 
-def sq_rate_loss(y_true,y_pred):
-    log2_e = 1.4427
-    n = y_pred.shape[-1]//3
-    r = y_pred[:,:,2*n:]
-    p0 = y_pred[:,:,n:2*n]
-    p0 = 1-r**(.5+.5*p0)
-    y_pred = y_pred[:,:,:n]
-    y0 = K.maximum(0., 1. - K.abs(y_pred))**2
-    rate = -y0*safelog2(p0*r**K.abs(y_pred)) - (1-y0)*safelog2(.5*(1-p0)*(1-r)*r**(K.abs(y_pred)-1))
-    rate = K.sum(rate, axis=-1)
-    return K.mean(rate)
 
-def sq1_rate_loss(y_true,y_pred):
-    log2_e = 1.4427
-    n = y_pred.shape[-1]//3
-    r = (y_pred[:,:,2*n:])
-    p0 = (y_pred[:,:,n:2*n])
-    p0 = 1-r**(.5+.5*p0)
-    y_pred = y_pred[:,:,:n]
-    y0 = K.maximum(0., 1. - K.abs(y_pred))**2
-    rate = -y0*safelog2(p0*r**K.abs(y_pred)) - (1-y0)*safelog2(.5*(1-p0)*(1-r)*r**(K.abs(y_pred)-1))
-    rate = -safelog2(-.5*tf.math.log(r)*r**K.abs(y_pred))
-    rate = -safelog2((1-r)/(1+r)*r**K.abs(y_pred))
-    rate = K.sum(rate, axis=-1)
-    return K.mean(rate)
-
-def sq2_rate_loss(y_true,y_pred):
-    log2_e = 1.4427
-    n = y_pred.shape[-1]//3
-    r = y_pred[:,:,2*n:]
-    p0 = y_pred[:,:,n:2*n]
-    p0 = 1-r**(.5+.5*p0)
-    #theta = K.minimum(1., .5 + 0*p0 - 0.04*tf.math.log(r))
-    #p0 = 1-r**theta
-    y_pred = tf.round(y_pred[:,:,:n])
-    y0 = K.maximum(0., 1. - K.abs(y_pred))**2
-    rate = -y0*safelog2(p0*r**K.abs(y_pred)) - (1-y0)*safelog2(.5*(1-p0)*(1-r)*r**(K.abs(y_pred)-1))
-    rate = K.sum(rate, axis=-1)
-    return K.mean(rate)
-
-def sq_rate_metric(y_true,y_pred):
-    log2_e = 1.4427
-    n = y_pred.shape[-1]//3
-    r = y_pred[:,:,2*n:]
-    p0 = y_pred[:,:,n:2*n]
-    p0 = 1-r**(.5+.5*p0)
-    y_pred = tf.round(y_pred[:,:,:n])
-    #FIXME: make y0 differentiable
-    #y0 = tf.cast(K.abs(y_pred)<.5, tf.float32)
-    y0 = K.maximum(0., 1. - K.abs(y_pred))**2
-    rate = -y0*log2_e*tf.math.log(p0) - (1-y0)*log2_e*tf.math.log(.5*(1-p0)*(1-r)*r**(K.abs(y_pred)-1))
-    rate = K.sum(rate, axis=-1)
-    return K.mean(rate)
-
-def rate_metric(y_true,y_pred):
-    log2_e = 1.4427
-    n = y_pred.shape[-1]
-    C = n - log2_e*np.math.log(np.math.gamma(n))
-    k = K.sum(K.abs(tf.round(y_pred)), axis=-1)
-    p = 1.5
-    #rate = C + (n-1)*log2_e*tf.math.log((k**p + (n/5)**p)**(1/p))
-    rate = C + (n-1)*log2_e*tf.math.log(k + .112*n**2/(n/1.8+k) )
-    return K.mean(rate)
-
-def new_rdovae_model(nb_used_features=20, nb_bits=17, batch_size=128, cond_size=128, cond_size2=256):
+def new_pvqvae_model(nb_used_features=20, nb_bits=17, batch_size=128, cond_size=128, cond_size2=128):
     feat = Input(shape=(None, nb_used_features), batch_size=batch_size)
 
 
     enc_dense1 = Dense(cond_size2, activation='tanh', name='enc_dense1')
-    enc_dense2 = CuDNNGRU(cond_size, return_sequences=True, name='enc_dense2')
+    enc_dense2 = Dense(cond_size, activation='tanh', name='enc_dense2')
     enc_dense3 = Dense(cond_size2, activation='tanh', name='enc_dense3')
-    enc_dense4 = CuDNNGRU(cond_size, return_sequences=True, name='enc_dense4')
+    enc_dense4 = Dense(cond_size, activation='tanh', name='enc_dense4')
     enc_dense5 = Dense(cond_size2, activation='tanh', name='enc_dense5')
-    enc_dense6 = CuDNNGRU(cond_size, return_sequences=True, name='enc_dense6')
     #enc_dense6 = Dense(cond_size, activation='tanh', name='enc_dense6')
-    enc_dense7 = Dense(cond_size, activation='tanh', name='enc_dense7')
-    enc_dense8 = Dense(cond_size, activation='tanh', name='enc_dense8')
-    #enc_dense7 = (CuDNNGRU(cond_size, return_sequences=True, name='enc_dense7'))
-    #enc_dense8 = (CuDNNGRU(cond_size, return_sequences=True, name='enc_dense8'))
+    #enc_dense7 = Dense(cond_size, activation='tanh', name='enc_dense7')
+    #enc_dense8 = Dense(cond_size, activation='tanh', name='enc_dense8')
+    enc_dense6 = (CuDNNGRU(cond_size, return_sequences=True, name='enc_dense6'))
+    enc_dense7 = (CuDNNGRU(cond_size, return_sequences=True, name='enc_dense7'))
+    enc_dense8 = (CuDNNGRU(cond_size, return_sequences=True, name='enc_dense8'))
 
     #bits_dense = Dense(nb_bits, activation='linear', name='bits_dense', activity_regularizer=binary_reg(4.25))
     #bits_dense = Dense(nb_bits, activation='tanh', name='bits_dense')
@@ -216,13 +187,13 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, batch_size=128, cond_size=
     #noisy_bits = noise_lambda(bits)
     
     
-    dec_dense1 = Dense(cond_size2, activation='tanh', name='dec_dense1')
-    #dec_dense1 = Conv1D(cond_size2, 2, padding='causal', activation='tanh', name='dec_dense1')
+    #dec_dense1 = Dense(cond_size2, activation='tanh', name='dec_dense1')
+    dec_dense1 = Conv1D(cond_size2, 2, padding='causal', activation='tanh', name='dec_dense1')
     dec_dense2 = Dense(cond_size, activation='tanh', name='dec_dense2')
-    dec_dense3 = Conv1D(cond_size2, 2, padding='causal', activation='tanh', name='dec_dense3')
-    dec_dense4 = CuDNNGRU(cond_size, return_sequences=True, name='dec_dense4')
-    dec_dense5 = CuDNNGRU(cond_size, return_sequences=True, name='dec_dense5')
-    dec_dense6 = CuDNNGRU(cond_size, return_sequences=True, name='dec_dense6')
+    dec_dense3 = Dense(cond_size2, activation='tanh', name='dec_dense3')
+    dec_dense4 = Dense(cond_size, activation='tanh', name='dec_dense4')
+    dec_dense5 = Dense(cond_size2, activation='tanh', name='dec_dense5')
+    dec_dense6 = Dense(cond_size2, activation='tanh', name='dec_dense6')
     dec_dense7 = Dense(cond_size2, activation='tanh', name='dec_dense7')
     dec_dense8 = Dense(cond_size2, activation='tanh', name='dec_dense8')
     #dec_dense6 = Bidirectional(CuDNNGRU(cond_size, return_sequences=True, name='dec_dense6'))
@@ -249,15 +220,7 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, batch_size=128, cond_size=
     e = encoder(feat)
     combined_output = decoder(hardquant(e))
 
-    phony = Lambda(lambda x: 0*x[:,:,0:1])
-    dist_params2 = Dense(2*nb_bits, activation='sigmoid', name='dist_dense2')
-    dist2 = dist_params2(phony(e))
-    e2 = Concatenate(name="hard_bits")([e, dist2])
-    dist_params = Dense(2*nb_bits, activation='sigmoid', name='dist_dense')
-    dist = dist_params(phony(e))
-    e = Concatenate(name="soft_bits")([e, dist])
-
-    model = Model(feat, [combined_output, e, e2])
+    model = Model(feat, combined_output)
     model.nb_used_features = nb_used_features
 
     return model, encoder, decoder
