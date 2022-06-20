@@ -28,7 +28,7 @@
 import math
 import tensorflow as tf
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, GRU, Dense, Embedding, Reshape, Concatenate, Lambda, Conv1D, Multiply, Add, Bidirectional, MaxPooling1D, Activation, GaussianNoise
+from tensorflow.keras.layers import Input, GRU, Dense, Embedding, Reshape, Concatenate, Lambda, Conv1D, Multiply, Add, Bidirectional, MaxPooling1D, Activation, GaussianNoise, AveragePooling1D
 from tensorflow.compat.v1.keras.layers import CuDNNGRU
 from tensorflow.keras import backend as K
 from tensorflow.keras.constraints import Constraint
@@ -77,14 +77,24 @@ def commit_reg(c):
 
 def soft_quantize(x):
     #x = 4*x
-    x = x - (.25/np.math.pi)*tf.math.sin(2*np.math.pi*x)
-    x = x - (.25/np.math.pi)*tf.math.sin(2*np.math.pi*x)    
+    #x = x - (.25/np.math.pi)*tf.math.sin(2*np.math.pi*x)
+    #x = x - (.25/np.math.pi)*tf.math.sin(2*np.math.pi*x)
+    #x = x - (.25/np.math.pi)*tf.math.sin(2*np.math.pi*x)    
     return x
 
+def noise_quantize(x):
+    return soft_quantize(x + (K.random_uniform((8, 128, 80))-.5) )
+
 def hard_quantize(x):
-    #x = soft_quantize(x)
+    x = soft_quantize(x)
     quantized = tf.round(x)
     return x + tf.stop_gradient(quantized - x)
+
+def apply_dead_zone(x):
+    d = x[1]*.05
+    x = x[0]
+    y = x - d*tf.math.tanh(x/(.1+d))
+    return y
 
 def rate_loss(y_true,y_pred):
     log2_e = 1.4427
@@ -108,34 +118,44 @@ def feat_dist_loss(y_true,y_pred):
     pitch_weight = K.square(K.maximum(0., y_true[:,:,19:]+.5))
     return K.mean(K.square(ceps) + 10*(1/18.)*K.abs(pitch)*pitch_weight + (1/18.)*K.square(corr))
 
-
-def sq_rate_loss(y_true,y_pred):
-    log2_e = 1.4427
-    n = y_pred.shape[-1]//3
-    r = y_pred[:,:,2*n:]
-    p0 = y_pred[:,:,n:2*n]
-    p0 = 1-r**(.5+.5*p0)
-    y_pred = y_pred[:,:,:n]
-    y0 = K.maximum(0., 1. - K.abs(y_pred))**2
-    rate = -y0*safelog2(p0*r**K.abs(y_pred)) - (1-y0)*safelog2(.5*(1-p0)*(1-r)*r**(K.abs(y_pred)-1))
-    rate = K.sum(rate, axis=-1)
-    return K.mean(rate)
-
 def sq1_rate_loss(y_true,y_pred):
+    lambda_val = y_pred[:,:,-1]
+    y_pred = y_pred[:,:,:-1]
     log2_e = 1.4427
     n = y_pred.shape[-1]//3
     r = (y_pred[:,:,2*n:])
     p0 = (y_pred[:,:,n:2*n])
     p0 = 1-r**(.5+.5*p0)
     y_pred = y_pred[:,:,:n]
+    y_pred = soft_quantize(y_pred)
+
     y0 = K.maximum(0., 1. - K.abs(y_pred))**2
     rate = -y0*safelog2(p0*r**K.abs(y_pred)) - (1-y0)*safelog2(.5*(1-p0)*(1-r)*r**(K.abs(y_pred)-1))
     rate = -safelog2(-.5*tf.math.log(r)*r**K.abs(y_pred))
     rate = -safelog2((1-r)/(1+r)*r**K.abs(y_pred))
-    rate = K.sum(rate, axis=-1)
+    #rate = -safelog2(- tf.math.sinh(.5*tf.math.log(r))* r**K.abs(y_pred) - tf.math.cosh(K.maximum(0., .5 - K.abs(y_pred))*tf.math.log(r)) + 1)
+    rate = lambda_val*K.sum(rate, axis=-1)
     return K.mean(rate)
 
 def sq2_rate_loss(y_true,y_pred):
+    lambda_val = y_pred[:,:,-1]
+    y_pred = y_pred[:,:,:-1]
+    log2_e = 1.4427
+    n = y_pred.shape[-1]//3
+    r = y_pred[:,:,2*n:]
+    p0 = y_pred[:,:,n:2*n]
+    p0 = 1-r**(.5+.5*p0)
+    #theta = K.minimum(1., .5 + 0*p0 - 0.04*tf.math.log(r))
+    #p0 = 1-r**theta
+    y_pred = tf.round(y_pred[:,:,:n])
+    y0 = K.maximum(0., 1. - K.abs(y_pred))**2
+    rate = -y0*safelog2(p0*r**K.abs(y_pred)) - (1-y0)*safelog2(.5*(1-p0)*(1-r)*r**(K.abs(y_pred)-1))
+    rate = lambda_val*K.sum(rate, axis=-1)
+    return K.mean(rate)
+
+def sq_rate_metric(y_true,y_pred):
+    lambda_val = y_pred[:,:,-1]
+    y_pred = y_pred[:,:,:-1]
     log2_e = 1.4427
     n = y_pred.shape[-1]//3
     r = y_pred[:,:,2*n:]
@@ -149,33 +169,18 @@ def sq2_rate_loss(y_true,y_pred):
     rate = K.sum(rate, axis=-1)
     return K.mean(rate)
 
-def sq_rate_metric(y_true,y_pred):
-    log2_e = 1.4427
-    n = y_pred.shape[-1]//3
-    r = y_pred[:,:,2*n:]
-    p0 = y_pred[:,:,n:2*n]
-    p0 = 1-r**(.5+.5*p0)
-    y_pred = tf.round(y_pred[:,:,:n])
-    #FIXME: make y0 differentiable
-    #y0 = tf.cast(K.abs(y_pred)<.5, tf.float32)
-    y0 = K.maximum(0., 1. - K.abs(y_pred))**2
-    rate = -y0*log2_e*tf.math.log(p0) - (1-y0)*log2_e*tf.math.log(.5*(1-p0)*(1-r)*r**(K.abs(y_pred)-1))
-    rate = K.sum(rate, axis=-1)
-    return K.mean(rate)
 
-def rate_metric(y_true,y_pred):
-    log2_e = 1.4427
-    n = y_pred.shape[-1]
-    C = n - log2_e*np.math.log(np.math.gamma(n))
-    k = K.sum(K.abs(tf.round(y_pred)), axis=-1)
-    p = 1.5
-    #rate = C + (n-1)*log2_e*tf.math.log((k**p + (n/5)**p)**(1/p))
-    rate = C + (n-1)*log2_e*tf.math.log(k + .112*n**2/(n/1.8+k) )
-    return K.mean(rate)
-
-def new_rdovae_model(nb_used_features=20, nb_bits=17, batch_size=128, cond_size=128, cond_size2=256):
+def new_rdovae_model(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, batch_size=128, cond_size=128, cond_size2=256):
     feat = Input(shape=(None, nb_used_features), batch_size=batch_size)
 
+    quant_id = Input(shape=(None,), batch_size=batch_size)
+    lambda_val = Input(shape=(None, 1), batch_size=batch_size)
+    qembedding = Embedding(nb_quant, 6*nb_bits, name='quant_embed', embeddings_initializer='zeros')
+    quant_embed = qembedding(quant_id)
+    quant_embed = AveragePooling1D(pool_size=bunch, strides=bunch, padding="valid")(quant_embed)
+    lambda_bunched = AveragePooling1D(pool_size=bunch, strides=bunch, padding="valid")(lambda_val)
+
+    quant_scale = Activation('softplus')(Lambda(lambda x: x[:,:,:nb_bits], name='quant_scale_embed')(quant_embed))
 
     enc_dense1 = Dense(cond_size2, activation='tanh', name='enc_dense1')
     enc_dense2 = CuDNNGRU(cond_size, return_sequences=True, name='enc_dense2')
@@ -195,9 +200,10 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, batch_size=128, cond_size=
     bits_dense = Dense(nb_bits, activation='linear', name='bits_dense')
     #bits_dense = Dense(nb_bits, activation='linear', name='bits_dense', activity_regularizer=commit_reg(1.))
 
-
+    zero_out = Lambda(lambda x: 0*x)
+    inputs = Concatenate()([Reshape((-1, bunch*nb_used_features))(feat), tf.stop_gradient(quant_embed), (lambda_bunched)])
     #bits = bits_dense(enc_dense8(enc_dense7(enc_dense6(enc_dense5(enc_dense4(enc_dense3(enc_dense2(enc_dense1(feat)))))))))
-    d1 = enc_dense1(Reshape((-1, 4*nb_used_features))(feat))
+    d1 = enc_dense1(inputs)
     d2 = enc_dense2(d1)
     d3 = enc_dense3(d2)
     d4 = enc_dense4(d3)
@@ -205,12 +211,14 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, batch_size=128, cond_size=
     d6 = enc_dense6(d5)
     d7 = enc_dense7(d6)
     d8 = enc_dense8(d7)
-    bits = bits_dense(Concatenate()([d1, d2, d3, d4, d5, d6, d7, d8]))
+    bits = Multiply()([bits_dense(Concatenate()([d1, d2, d3, d4, d5, d6, d7, d8])), quant_scale])
     #bits = bits_dense(feat)
     #bits = enc_dense1(feat)
-    encoder = Model(feat, bits, name='bits')
+    encoder = Model([feat, quant_id, lambda_val], [bits, quant_embed], name='bits')
+    ze, quant_embed_dec = encoder([feat, quant_id, lambda_val])
 
     bits_input = Input(shape=(None, nb_bits), batch_size=batch_size)
+    quant_embed_input = Input(shape=(None, 6*nb_bits), batch_size=batch_size)
 
     noise_lambda = Lambda(bits_noise)
     #noisy_bits = noise_lambda(bits)
@@ -229,9 +237,12 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, batch_size=128, cond_size=
     #dec_dense7 = Bidirectional(CuDNNGRU(cond_size, return_sequences=True, name='dec_dense7'))
     #dec_dense8 = Bidirectional(CuDNNGRU(cond_size, return_sequences=True, name='dec_dense8'))
 
-    dec_final = Dense(4*nb_used_features, activation='linear', name='dec_final')
+    dec_final = Dense(bunch*nb_used_features, activation='linear', name='dec_final')
 
-    dec1 = dec_dense1(bits_input)
+    div = Lambda(lambda x: x[0]/x[1])
+    quant_scale_dec = Activation('softplus')(Lambda(lambda x: x[:,:,:nb_bits], name='quant_scale_embed_dec')(quant_embed_input))
+    dec_inputs = Concatenate()([div([bits_input,quant_scale_dec]), tf.stop_gradient(quant_embed_input)])
+    dec1 = dec_dense1(dec_inputs)
     dec2 = dec_dense2(dec1)
     dec3 = dec_dense3(dec2)
     dec4 = dec_dense4(dec3)
@@ -242,22 +253,32 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, batch_size=128, cond_size=
     output = Reshape((-1, nb_used_features))(dec_final(Concatenate()([dec1, dec2, dec3, dec4, dec5, dec6, dec7, dec8])))
     #output = dec_final(bits_input)
     #output = dec_final(noisy_bits)
-    decoder = Model(bits_input, output, name='output')
-    
-    #hardquant = Activation(tf.keras.activations.hard_sigmoid)
+    decoder = Model([bits_input, quant_embed_input], output, name='output')
+
+    dead_zone = Activation('softplus')(Lambda(lambda x: x[:,:,nb_bits:2*nb_bits], name='dead_zone_embed')(quant_embed_dec))
+    soft_distr_embed = Activation('sigmoid')(Lambda(lambda x: x[:,:,2*nb_bits:4*nb_bits], name='soft_distr_embed')(quant_embed_dec))
+    hard_distr_embed = Activation('sigmoid')(Lambda(lambda x: x[:,:,4*nb_bits:], name='hard_distr_embed')(quant_embed_dec))
+
+    noisequant = Lambda(noise_quantize)
     hardquant = Lambda(hard_quantize)
-    e = encoder(feat)
-    combined_output = decoder(hardquant(e))
+    dzone = Lambda(apply_dead_zone)
+    dze = dzone([ze,dead_zone])
+    combined_output = decoder([tf.stop_gradient(hardquant(dze)), tf.stop_gradient(quant_embed_dec)])
+    ndze = noisequant(dze)
+    unquantized_output = decoder([ndze, quant_embed_dec])
+    unquantized_output_dec = decoder([tf.stop_gradient(ndze), tf.stop_gradient(quant_embed_dec)])
 
-    phony = Lambda(lambda x: 0*x[:,:,0:1])
-    dist_params2 = Dense(2*nb_bits, activation='sigmoid', name='dist_dense2')
-    dist2 = dist_params2(phony(e))
-    e2 = Concatenate(name="hard_bits")([e, dist2])
-    dist_params = Dense(2*nb_bits, activation='sigmoid', name='dist_dense')
-    dist = dist_params(phony(e))
-    e = Concatenate(name="soft_bits")([e, dist])
+    #phony = Lambda(lambda x: 0*x[:,:,0:1])
+    #dist_params2 = Dense(2*nb_bits, activation='sigmoid', name='dist_dense2')
+    #hard_distr_embed = dist_params2(phony(ze))
+    #dist_params = Dense(2*nb_bits, activation='sigmoid', name='dist_dense')
+    #soft_distr_embed = dist_params(phony(ze))
 
-    model = Model(feat, [combined_output, e, e2])
+    e2 = Concatenate(name="hard_bits")([dze, hard_distr_embed, lambda_bunched])
+    e = Concatenate(name="soft_bits")([dze, soft_distr_embed, lambda_bunched])
+
+
+    model = Model([feat, quant_id, lambda_val], [combined_output, unquantized_output, unquantized_output_dec, e, e2])
     model.nb_used_features = nb_used_features
 
     return model, encoder, decoder

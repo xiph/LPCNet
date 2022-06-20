@@ -100,7 +100,7 @@ opt = Adam(lr, decay=decay, beta_2=0.99)
 
 with strategy.scope():
     model, encoder, decoder = rdovae.new_rdovae_model(nb_used_features=20, nb_bits=80, batch_size=batch_size, cond_size=args.cond_size)
-    model.compile(optimizer=opt, loss=[rdovae.feat_dist_loss, rdovae.sq1_rate_loss, rdovae.sq2_rate_loss], loss_weights=[1.0, .001, .00007], metrics={'output':'mse', 'hard_bits':rdovae.sq_rate_metric})
+    model.compile(optimizer=opt, loss=[rdovae.feat_dist_loss, rdovae.feat_dist_loss, rdovae.feat_dist_loss, rdovae.sq1_rate_loss, rdovae.sq2_rate_loss], loss_weights=[0.0, 1., 0., 1., .1], metrics={'output':'mse', 'hard_bits':rdovae.sq_rate_metric})
     model.summary()
 
 lpc_order = 16
@@ -120,7 +120,12 @@ features = features[:nb_sequences*sequence_size*nb_features]
 features = np.reshape(features, (nb_sequences, sequence_size, nb_features))
 print(features.shape)
 features = features[:, :, :nb_used_features]
-#features = np.random.randn(73600, 1000, 17)
+
+#lambda_val = np.random.uniform(.0007, .002, (features.shape[0], features.shape[1], 1))
+lambda_val = np.repeat(np.random.uniform(.0007, .002, (features.shape[0], 1, 1)), features.shape[1], axis=1)
+#lambda_val = 0*lambda_val + .001
+quant_id = np.round(10*np.log(lambda_val/.0007)).astype('int16')
+quant_id = quant_id[:,:,0]
 
 # dump models to disk as we go
 checkpoint = ModelCheckpoint('{}_{}_{}.h5'.format(args.output, args.cond_size, '{epoch:02d}'))
@@ -142,4 +147,4 @@ if args.logdir is not None:
     tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=logdir)
     callbacks.append(tensorboard_callback)
 
-model.fit(features, [features, features, features], batch_size=batch_size, epochs=nb_epochs, validation_split=0.0, callbacks=callbacks)
+model.fit([features, quant_id, lambda_val], [features, features, features, features, features], batch_size=batch_size, epochs=nb_epochs, validation_split=0.0, callbacks=callbacks)
