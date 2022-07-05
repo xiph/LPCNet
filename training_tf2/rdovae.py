@@ -56,25 +56,6 @@ class WeightClip(Constraint):
 
 constraint = WeightClip(0.992)
 
-rand_gen = tf.random.Generator.from_non_deterministic_state()
-
-def bits_noise(x):
-    
-    return K.clip(1.1*x + .2*rand_gen.uniform((16, 1000, 50,))-.1, -1, 1)
-    #return K.clip(x + 0.1*(1-K.abs(x))*GaussianNoise(1.)(x), -1, 1)
-
-def binary_reg(c):
-    def binary(x):
-        #return c*K.mean(K.sqrt(1.01-K.abs(x))-.1)
-        return c*K.mean(K.abs(x))
-    return binary
-
-def commit_reg(c):
-    def commit(x):
-        #return c*K.mean(K.sqrt(1.01-K.abs(x))-.1)
-        return c*K.mean(K.abs(x-tf.round(x)))
-    return commit
-
 def soft_quantize(x):
     #x = 4*x
     #x = x - (.25/np.math.pi)*tf.math.sin(2*np.math.pi*x)
@@ -263,7 +244,7 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, batc
     hardquant = Lambda(hard_quantize)
     dzone = Lambda(apply_dead_zone)
     dze = dzone([ze,dead_zone])
-    combined_output = decoder([tf.stop_gradient(hardquant(dze)), tf.stop_gradient(quant_embed_dec)])
+    combined_output = decoder([hardquant(dze), tf.stop_gradient(quant_embed_dec)])
     ndze = noisequant(dze)
     unquantized_output = decoder([ndze, quant_embed_dec])
     unquantized_output_dec = decoder([tf.stop_gradient(ndze), tf.stop_gradient(quant_embed_dec)])
