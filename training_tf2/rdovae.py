@@ -28,7 +28,7 @@
 import math
 import tensorflow as tf
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, GRU, Dense, Embedding, Reshape, Concatenate, Lambda, Conv1D, Multiply, Add, Bidirectional, MaxPooling1D, Activation, GaussianNoise, AveragePooling1D
+from tensorflow.keras.layers import Input, GRU, Dense, Embedding, Reshape, Concatenate, Lambda, Conv1D, Multiply, Add, Bidirectional, MaxPooling1D, Activation, GaussianNoise, AveragePooling1D, RepeatVector
 from tensorflow.compat.v1.keras.layers import CuDNNGRU
 from tensorflow.keras import backend as K
 from tensorflow.keras.constraints import Constraint
@@ -37,6 +37,7 @@ from tensorflow.keras.callbacks import Callback
 from tensorflow.keras.regularizers import l1
 import numpy as np
 import h5py
+from uniform_noise import UniformNoise
 
 class WeightClip(Constraint):
     '''Clips the weights incident to each hidden unit to be inside a range
@@ -54,7 +55,7 @@ class WeightClip(Constraint):
         return {'name': self.__class__.__name__,
             'c': self.c}
 
-constraint = WeightClip(0.992)
+constraint = WeightClip(0.496)
 
 def soft_quantize(x):
     #x = 4*x
@@ -64,7 +65,7 @@ def soft_quantize(x):
     return x
 
 def noise_quantize(x):
-    return soft_quantize(x + (K.random_uniform((8, 128, 80))-.5) )
+    return soft_quantize(x + (K.random_uniform((128, 16, 80))-.5) )
 
 def hard_quantize(x):
     x = soft_quantize(x)
@@ -163,15 +164,15 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, batc
 
     quant_scale = Activation('softplus')(Lambda(lambda x: x[:,:,:nb_bits], name='quant_scale_embed')(quant_embed))
 
-    enc_dense1 = Dense(cond_size2, activation='tanh', name='enc_dense1')
+    enc_dense1 = Dense(cond_size2, activation='tanh', kernel_constraint=constraint, name='enc_dense1')
     enc_dense2 = CuDNNGRU(cond_size, return_sequences=True, name='enc_dense2')
-    enc_dense3 = Dense(cond_size2, activation='tanh', name='enc_dense3')
+    enc_dense3 = Dense(cond_size2, activation='tanh', kernel_constraint=constraint, name='enc_dense3')
     enc_dense4 = CuDNNGRU(cond_size, return_sequences=True, name='enc_dense4')
-    enc_dense5 = Dense(cond_size2, activation='tanh', name='enc_dense5')
-    enc_dense6 = CuDNNGRU(cond_size, return_sequences=True, name='enc_dense6')
+    enc_dense5 = Dense(cond_size2, activation='tanh', kernel_constraint=constraint, name='enc_dense5')
+    enc_dense6 = CuDNNGRU(cond_size, return_sequences=True, return_state=True, name='enc_dense6')
     #enc_dense6 = Dense(cond_size, activation='tanh', name='enc_dense6')
-    enc_dense7 = Dense(cond_size, activation='tanh', name='enc_dense7')
-    enc_dense8 = Dense(cond_size, activation='tanh', name='enc_dense8')
+    enc_dense7 = Dense(cond_size, activation='tanh', kernel_constraint=constraint, name='enc_dense7')
+    enc_dense8 = Dense(cond_size, activation='tanh', kernel_constraint=constraint, name='enc_dense8')
     #enc_dense7 = (CuDNNGRU(cond_size, return_sequences=True, name='enc_dense7'))
     #enc_dense8 = (CuDNNGRU(cond_size, return_sequences=True, name='enc_dense8'))
 
@@ -189,31 +190,33 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, batc
     d3 = enc_dense3(d2)
     d4 = enc_dense4(d3)
     d5 = enc_dense5(d4)
-    d6 = enc_dense6(d5)
+    d6, gru_state = enc_dense6(d5)
     d7 = enc_dense7(d6)
     d8 = enc_dense8(d7)
     bits = Multiply()([bits_dense(Concatenate()([d1, d2, d3, d4, d5, d6, d7, d8])), quant_scale])
+    global_dense1 = Dense(128, activation='tanh', name='gdense1')
+    global_dense2 = Dense(16, activation='tanh', name='gdense2')
+    global_bits = global_dense2(global_dense1(gru_state))
+
     #bits = bits_dense(feat)
     #bits = enc_dense1(feat)
-    encoder = Model([feat, quant_id, lambda_val], [bits, quant_embed], name='bits')
-    ze, quant_embed_dec = encoder([feat, quant_id, lambda_val])
+    encoder = Model([feat, quant_id, lambda_val], [bits, quant_embed, global_bits], name='bits')
+    ze, quant_embed_dec, gru_state_dec = encoder([feat, quant_id, lambda_val])
 
-    bits_input = Input(shape=(None, nb_bits), batch_size=batch_size)
+    bits_input = Input(shape=(64//bunch, nb_bits), batch_size=batch_size)
     quant_embed_input = Input(shape=(None, 6*nb_bits), batch_size=batch_size)
+    gru_state_input = Input(shape=(16,), batch_size=batch_size)
 
-    noise_lambda = Lambda(bits_noise)
-    #noisy_bits = noise_lambda(bits)
     
-    
-    dec_dense1 = Dense(cond_size2, activation='tanh', name='dec_dense1')
+    dec_dense1 = Dense(cond_size2, activation='tanh', kernel_constraint=constraint, name='dec_dense1')
     #dec_dense1 = Conv1D(cond_size2, 2, padding='causal', activation='tanh', name='dec_dense1')
-    dec_dense2 = Dense(cond_size, activation='tanh', name='dec_dense2')
-    dec_dense3 = Conv1D(cond_size2, 2, padding='causal', activation='tanh', name='dec_dense3')
+    dec_dense2 = Dense(cond_size, activation='tanh', kernel_constraint=constraint, name='dec_dense2')
+    dec_dense3 = Dense(cond_size2, activation='tanh', kernel_constraint=constraint, name='dec_dense3')
     dec_dense4 = CuDNNGRU(cond_size, return_sequences=True, name='dec_dense4')
     dec_dense5 = CuDNNGRU(cond_size, return_sequences=True, name='dec_dense5')
     dec_dense6 = CuDNNGRU(cond_size, return_sequences=True, name='dec_dense6')
-    dec_dense7 = Dense(cond_size2, activation='tanh', name='dec_dense7')
-    dec_dense8 = Dense(cond_size2, activation='tanh', name='dec_dense8')
+    dec_dense7 = Dense(cond_size2, activation='tanh', kernel_constraint=constraint, name='dec_dense7')
+    dec_dense8 = Dense(cond_size2, activation='tanh', kernel_constraint=constraint, name='dec_dense8')
     #dec_dense6 = Bidirectional(CuDNNGRU(cond_size, return_sequences=True, name='dec_dense6'))
     #dec_dense7 = Bidirectional(CuDNNGRU(cond_size, return_sequences=True, name='dec_dense7'))
     #dec_dense8 = Bidirectional(CuDNNGRU(cond_size, return_sequences=True, name='dec_dense8'))
@@ -221,9 +224,15 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, batc
     dec_final = Dense(bunch*nb_used_features, activation='linear', name='dec_final')
 
     div = Lambda(lambda x: x[0]/x[1])
+    time_reverse = Lambda(lambda x: K.reverse(x, 1))
+    #time_reverse = Lambda(lambda x: x)
     quant_scale_dec = Activation('softplus')(Lambda(lambda x: x[:,:,:nb_bits], name='quant_scale_embed_dec')(quant_embed_input))
-    dec_inputs = Concatenate()([div([bits_input,quant_scale_dec]), tf.stop_gradient(quant_embed_input)])
-    dec1 = dec_dense1(dec_inputs)
+    #gru_state_rep = Reshape((1, 8))(gru_state_input)
+    #gru_state_rep = Lambda(lambda x: K.repeat_elements(x, 512//bunch, 1))(gru_state_rep)
+    gru_state_rep = RepeatVector(64//bunch)(gru_state_input)
+
+    dec_inputs = Concatenate()([div([bits_input,quant_scale_dec]), tf.stop_gradient(quant_embed_input), gru_state_rep])
+    dec1 = dec_dense1(time_reverse(dec_inputs))
     dec2 = dec_dense2(dec1)
     dec3 = dec_dense3(dec2)
     dec4 = dec_dense4(dec3)
@@ -234,26 +243,21 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, batc
     output = Reshape((-1, nb_used_features))(dec_final(Concatenate()([dec1, dec2, dec3, dec4, dec5, dec6, dec7, dec8])))
     #output = dec_final(bits_input)
     #output = dec_final(noisy_bits)
-    decoder = Model([bits_input, quant_embed_input], output, name='output')
+    decoder = Model([bits_input, quant_embed_input, gru_state_input], time_reverse(output), name='output')
 
     dead_zone = Activation('softplus')(Lambda(lambda x: x[:,:,nb_bits:2*nb_bits], name='dead_zone_embed')(quant_embed_dec))
     soft_distr_embed = Activation('sigmoid')(Lambda(lambda x: x[:,:,2*nb_bits:4*nb_bits], name='soft_distr_embed')(quant_embed_dec))
     hard_distr_embed = Activation('sigmoid')(Lambda(lambda x: x[:,:,4*nb_bits:], name='hard_distr_embed')(quant_embed_dec))
 
-    noisequant = Lambda(noise_quantize)
+    #noisequant = Lambda(noise_quantize)
+    noisequant = UniformNoise()
     hardquant = Lambda(hard_quantize)
     dzone = Lambda(apply_dead_zone)
     dze = dzone([ze,dead_zone])
-    combined_output = decoder([hardquant(dze), tf.stop_gradient(quant_embed_dec)])
+    combined_output = decoder([hardquant(dze), tf.stop_gradient(quant_embed_dec), gru_state_dec])
     ndze = noisequant(dze)
-    unquantized_output = decoder([ndze, quant_embed_dec])
-    unquantized_output_dec = decoder([tf.stop_gradient(ndze), tf.stop_gradient(quant_embed_dec)])
-
-    #phony = Lambda(lambda x: 0*x[:,:,0:1])
-    #dist_params2 = Dense(2*nb_bits, activation='sigmoid', name='dist_dense2')
-    #hard_distr_embed = dist_params2(phony(ze))
-    #dist_params = Dense(2*nb_bits, activation='sigmoid', name='dist_dense')
-    #soft_distr_embed = dist_params(phony(ze))
+    unquantized_output = decoder([ndze, quant_embed_dec, gru_state_dec])
+    unquantized_output_dec = decoder([tf.stop_gradient(ndze), tf.stop_gradient(quant_embed_dec), gru_state_dec])
 
     e2 = Concatenate(name="hard_bits")([dze, hard_distr_embed, lambda_bunched])
     e = Concatenate(name="soft_bits")([dze, soft_distr_embed, lambda_bunched])

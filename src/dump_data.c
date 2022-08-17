@@ -92,9 +92,9 @@ void write_audio(LPCNetEncState *st, const short *pcm, const int *noise, FILE *f
     for (j=0;j<LPC_ORDER;j++) p -= st->features[k][NB_BANDS+2+j]*st->sig_mem[j];
     e = lin2ulaw(pcm[k*FRAME_SIZE+i] - p);
     /* Signal in. */
-    data[2*i] = float2short(st->sig_mem[0]);
+    //data[2*i] = float2short(st->sig_mem[0]);
     /* Signal out. */
-    data[2*i+1] = pcm[k*FRAME_SIZE+i];
+    data[i] = pcm[k*FRAME_SIZE+i];
     /* Simulate error on excitation. */
     e += noise[k*FRAME_SIZE+i];
     e = IMIN(255, IMAX(0, e));
@@ -103,7 +103,7 @@ void write_audio(LPCNetEncState *st, const short *pcm, const int *noise, FILE *f
     st->sig_mem[0] = p + ulaw2lin(e);
     st->exc_mem = e;
   }
-  fwrite(data, 4*FRAME_SIZE, 1, file);
+  fwrite(data, 2*FRAME_SIZE, 1, file);
   }
 }
 
@@ -243,7 +243,7 @@ int main(int argc, char **argv) {
       last_silent = silent;
     }
     if (count*FRAME_SIZE_5MS>=10000000 && one_pass_completed) break;
-    if (training && ++gain_change_count > 2821) {
+    if (0 && ++gain_change_count > 2821) {
       float tmp, tmp2;
       speech_gain = pow(10., (-30+(rand()%40))/20.);
       if (rand()&1) speech_gain = -speech_gain;
@@ -256,7 +256,7 @@ int main(int argc, char **argv) {
       noise_std = ABS16(-1.5*log(1e-4+tmp)-.5*log(1e-4+tmp2));
     }
     biquad(x, mem_hp_x, x, b_hp, a_hp, FRAME_SIZE);
-    biquad(x, mem_resp_x, x, b_sig, a_sig, FRAME_SIZE);
+    //biquad(x, mem_resp_x, x, b_sig, a_sig, FRAME_SIZE);
     for (i=0;i<FRAME_SIZE;i++) {
       float g;
       float f = (float)i/FRAME_SIZE;
