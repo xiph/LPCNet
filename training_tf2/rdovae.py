@@ -159,10 +159,10 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, batc
     lambda_val = Input(shape=(None, 1), batch_size=batch_size)
     qembedding = Embedding(nb_quant, 6*nb_bits, name='quant_embed', embeddings_initializer='zeros')
     quant_embed = qembedding(quant_id)
-    quant_embed = AveragePooling1D(pool_size=bunch, strides=bunch, padding="valid")(quant_embed)
+    quant_embed_bunched = AveragePooling1D(pool_size=bunch, strides=bunch, padding="valid")(quant_embed)
     lambda_bunched = AveragePooling1D(pool_size=bunch, strides=bunch, padding="valid")(lambda_val)
 
-    quant_scale = Activation('softplus')(Lambda(lambda x: x[:,:,:nb_bits], name='quant_scale_embed')(quant_embed))
+    quant_scale = Activation('softplus')(Lambda(lambda x: x[:,:,:nb_bits], name='quant_scale_embed')(quant_embed_bunched))
 
     enc_dense1 = Dense(cond_size2, activation='tanh', kernel_constraint=constraint, name='enc_dense1')
     enc_dense2 = CuDNNGRU(cond_size, return_sequences=True, kernel_constraint=constraint, recurrent_constraint=constraint, name='enc_dense2')
@@ -173,10 +173,12 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, batc
     enc_dense7 = Dense(cond_size, activation='tanh', kernel_constraint=constraint, name='enc_dense7')
     enc_dense8 = Dense(cond_size, activation='tanh', kernel_constraint=constraint, name='enc_dense8')
 
-    bits_dense = Dense(nb_bits, activation='linear', name='bits_dense')
+    #bits_dense = Dense(nb_bits, activation='linear', name='bits_dense')
+    bits_dense = Conv1D(nb_bits, 4, padding='causal', activation='linear', name='bits_dense')
 
     zero_out = Lambda(lambda x: 0*x)
-    inputs = Concatenate()([Reshape((-1, bunch*nb_used_features))(feat), tf.stop_gradient(quant_embed), (lambda_bunched)])
+    #inputs = Concatenate()([Reshape((-1, bunch*nb_used_features))(feat), tf.stop_gradient(quant_embed), (lambda_bunched)])
+    inputs = Concatenate()([feat, tf.stop_gradient(quant_embed), lambda_val])
     d1 = enc_dense1(inputs)
     d2 = enc_dense2(d1)
     d3 = enc_dense3(d2)
@@ -185,12 +187,14 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, batc
     d6, gru_state = enc_dense6(d5)
     d7 = enc_dense7(d6)
     d8 = enc_dense8(d7)
-    bits = Multiply()([bits_dense(Concatenate()([d1, d2, d3, d4, d5, d6, d7, d8])), quant_scale])
+    enc_out = bits_dense(Concatenate()([d1, d2, d3, d4, d5, d6, d7, d8]))
+    enc_out = Lambda(lambda x: x[:, bunch-1::bunch])(enc_out)
+    bits = Multiply()([enc_out, quant_scale])
     global_dense1 = Dense(128, activation='tanh', name='gdense1')
     global_dense2 = Dense(16, activation='tanh', name='gdense2')
     global_bits = global_dense2(global_dense1(gru_state))
 
-    encoder = Model([feat, quant_id, lambda_val], [bits, quant_embed, global_bits], name='bits')
+    encoder = Model([feat, quant_id, lambda_val], [bits, quant_embed_bunched, global_bits], name='encoder')
     ze, quant_embed_dec, gru_state_dec = encoder([feat, quant_id, lambda_val])
 
     bits_input = Input(shape=(64//bunch, nb_bits), batch_size=batch_size)
@@ -244,7 +248,7 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, batc
     e = Concatenate(name="soft_bits")([dze, soft_distr_embed, lambda_bunched])
 
 
-    model = Model([feat, quant_id, lambda_val], [combined_output, unquantized_output, unquantized_output_dec, e, e2])
+    model = Model([feat, quant_id, lambda_val], [combined_output, unquantized_output, unquantized_output_dec, e, e2], name="end2end")
     model.nb_used_features = nb_used_features
 
     return model, encoder, decoder
