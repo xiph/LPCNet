@@ -159,8 +159,8 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, batc
     lambda_val = Input(shape=(None, 1), batch_size=batch_size)
     qembedding = Embedding(nb_quant, 6*nb_bits, name='quant_embed', embeddings_initializer='zeros')
     quant_embed = qembedding(quant_id)
-    quant_embed_bunched = AveragePooling1D(pool_size=bunch, strides=bunch, padding="valid")(quant_embed)
-    lambda_bunched = AveragePooling1D(pool_size=bunch, strides=bunch, padding="valid")(lambda_val)
+    quant_embed_bunched = AveragePooling1D(pool_size=bunch//2, strides=bunch//2, padding="valid")(quant_embed)
+    lambda_bunched = AveragePooling1D(pool_size=bunch//2, strides=bunch//2, padding="valid")(lambda_val)
 
     quant_scale = Activation('softplus')(Lambda(lambda x: x[:,:,:nb_bits], name='quant_scale_embed')(quant_embed_bunched))
 
@@ -177,8 +177,8 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, batc
     bits_dense = Conv1D(nb_bits, 4, padding='causal', activation='linear', name='bits_dense')
 
     zero_out = Lambda(lambda x: 0*x)
-    #inputs = Concatenate()([Reshape((-1, bunch*nb_used_features))(feat), tf.stop_gradient(quant_embed), (lambda_bunched)])
-    inputs = Concatenate()([feat, tf.stop_gradient(quant_embed), lambda_val])
+    inputs = Concatenate()([Reshape((-1, 2*nb_used_features))(feat), tf.stop_gradient(quant_embed), lambda_val])
+    #inputs = Concatenate()([feat, tf.stop_gradient(quant_embed), lambda_val])
     d1 = enc_dense1(inputs)
     d2 = enc_dense2(d1)
     d3 = enc_dense3(d2)
@@ -188,7 +188,7 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, batc
     d7 = enc_dense7(d6)
     d8 = enc_dense8(d7)
     enc_out = bits_dense(Concatenate()([d1, d2, d3, d4, d5, d6, d7, d8]))
-    enc_out = Lambda(lambda x: x[:, bunch-1::bunch])(enc_out)
+    enc_out = Lambda(lambda x: x[:, bunch//2-1::bunch//2])(enc_out)
     bits = Multiply()([enc_out, quant_scale])
     global_dense1 = Dense(128, activation='tanh', name='gdense1')
     global_dense2 = Dense(16, activation='tanh', name='gdense2')

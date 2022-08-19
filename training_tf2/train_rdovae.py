@@ -122,7 +122,7 @@ print(features.shape)
 features = features[:, :, :nb_used_features]
 
 #lambda_val = np.random.uniform(.0007, .002, (features.shape[0], features.shape[1], 1))
-lambda_val = np.repeat(np.random.uniform(.0007, .002, (features.shape[0], 1, 1)), features.shape[1], axis=1)
+lambda_val = np.repeat(np.random.uniform(.0007, .002, (features.shape[0], 1, 1)), features.shape[1]//2, axis=1)
 #lambda_val = 0*lambda_val + .001
 quant_id = np.round(10*np.log(lambda_val/.0007)).astype('int16')
 quant_id = quant_id[:,:,0]
