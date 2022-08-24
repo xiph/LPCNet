@@ -151,8 +151,10 @@ def sq_rate_metric(y_true,y_pred):
     rate = K.sum(rate, axis=-1)
     return K.mean(rate)
 
+def var_repeat(x):
+    return RepeatVector(K.shape(x[1])[1])(x[0])
 
-def new_rdovae_model(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, batch_size=128, cond_size=128, cond_size2=256):
+def new_rdovae_encoder(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, batch_size=128, cond_size=128, cond_size2=256):
     feat = Input(shape=(None, nb_used_features), batch_size=batch_size)
 
     quant_id = Input(shape=(None,), batch_size=batch_size)
@@ -160,7 +162,6 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, batc
     qembedding = Embedding(nb_quant, 6*nb_bits, name='quant_embed', embeddings_initializer='zeros')
     quant_embed = qembedding(quant_id)
     quant_embed_bunched = AveragePooling1D(pool_size=bunch//2, strides=bunch//2, padding="valid")(quant_embed)
-    lambda_bunched = AveragePooling1D(pool_size=bunch//2, strides=bunch//2, padding="valid")(lambda_val)
 
     quant_scale = Activation('softplus')(Lambda(lambda x: x[:,:,:nb_bits], name='quant_scale_embed')(quant_embed_bunched))
 
@@ -195,9 +196,10 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, batc
     global_bits = global_dense2(global_dense1(gru_state))
 
     encoder = Model([feat, quant_id, lambda_val], [bits, quant_embed_bunched, global_bits], name='encoder')
-    ze, quant_embed_dec, gru_state_dec = encoder([feat, quant_id, lambda_val])
+    return encoder
 
-    bits_input = Input(shape=(64//bunch, nb_bits), batch_size=batch_size)
+def new_rdovae_decoder(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, batch_size=128, cond_size=128, cond_size2=256):
+    bits_input = Input(shape=(None, nb_bits), batch_size=batch_size)
     quant_embed_input = Input(shape=(None, 6*nb_bits), batch_size=batch_size)
     gru_state_input = Input(shape=(16,), batch_size=batch_size)
 
@@ -217,7 +219,9 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, batc
     time_reverse = Lambda(lambda x: K.reverse(x, 1))
     #time_reverse = Lambda(lambda x: x)
     quant_scale_dec = Activation('softplus')(Lambda(lambda x: x[:,:,:nb_bits], name='quant_scale_embed_dec')(quant_embed_input))
-    gru_state_rep = RepeatVector(64//bunch)(gru_state_input)
+    #gru_state_rep = RepeatVector(64//bunch)(gru_state_input)
+
+    gru_state_rep = Lambda(var_repeat, output_shape=(None, 16)) ([gru_state_input, bits_input])
 
     dec_inputs = Concatenate()([div([bits_input,quant_scale_dec]), tf.stop_gradient(quant_embed_input), gru_state_rep])
     dec1 = dec_dense1(time_reverse(dec_inputs))
@@ -230,6 +234,20 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, batc
     dec8 = dec_dense8(dec7)
     output = Reshape((-1, nb_used_features))(dec_final(Concatenate()([dec1, dec2, dec3, dec4, dec5, dec6, dec7, dec8])))
     decoder = Model([bits_input, quant_embed_input, gru_state_input], time_reverse(output), name='output')
+    return decoder
+
+
+def new_rdovae_model(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, batch_size=128, cond_size=128, cond_size2=256):
+
+    feat = Input(shape=(None, nb_used_features), batch_size=batch_size)
+    quant_id = Input(shape=(None,), batch_size=batch_size)
+    lambda_val = Input(shape=(None, 1), batch_size=batch_size)
+    lambda_bunched = AveragePooling1D(pool_size=bunch//2, strides=bunch//2, padding="valid")(lambda_val)
+
+    encoder = new_rdovae_encoder(nb_used_features, nb_bits, bunch, nb_quant, batch_size, cond_size, cond_size2)
+    ze, quant_embed_dec, gru_state_dec = encoder([feat, quant_id, lambda_val])
+
+    decoder = new_rdovae_decoder(nb_used_features, nb_bits, bunch, nb_quant, batch_size, cond_size, cond_size2)
 
     dead_zone = Activation('softplus')(Lambda(lambda x: x[:,:,nb_bits:2*nb_bits], name='dead_zone_embed')(quant_embed_dec))
     soft_distr_embed = Activation('sigmoid')(Lambda(lambda x: x[:,:,2*nb_bits:4*nb_bits], name='soft_distr_embed')(quant_embed_dec))
