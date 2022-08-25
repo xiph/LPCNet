@@ -193,7 +193,7 @@ def new_rdovae_encoder(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, ba
     bits = Multiply()([enc_out, quant_scale])
     global_dense1 = Dense(128, activation='tanh', name='gdense1')
     global_dense2 = Dense(16, activation='tanh', name='gdense2')
-    global_bits = global_dense2(global_dense1(gru_state))
+    global_bits = global_dense2(global_dense1(d6))
 
     encoder = Model([feat, quant_id, lambda_val], [bits, quant_embed_bunched, global_bits], name='encoder')
     return encoder
@@ -233,8 +233,20 @@ def new_rdovae_decoder(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, ba
     dec7 = dec_dense7(dec6)
     dec8 = dec_dense8(dec7)
     output = Reshape((-1, nb_used_features))(dec_final(Concatenate()([dec1, dec2, dec3, dec4, dec5, dec6, dec7, dec8])))
-    decoder = Model([bits_input, quant_embed_input, gru_state_input], time_reverse(output), name='output')
+    decoder = Model([bits_input, quant_embed_input, gru_state_input], time_reverse(output), name='decoder')
+    decoder.nb_bits = nb_bits
     return decoder
+
+def new_split_decoder(decoder):
+    nb_bits = decoder.nb_bits
+    bits_input = Input(shape=(None, nb_bits))
+    quant_embed_input = Input(shape=(None, 6*nb_bits))
+    gru_state_input = Input(shape=(None,16))
+
+    state = Lambda(lambda x: x[:,-1,:])(gru_state_input)
+    output = decoder([bits_input, quant_embed_input, state])
+    split = Model([bits_input, quant_embed_input, gru_state_input], output, name="split")
+    return split
 
 
 def new_rdovae_model(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, batch_size=128, cond_size=128, cond_size2=256):
@@ -248,6 +260,7 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, batc
     ze, quant_embed_dec, gru_state_dec = encoder([feat, quant_id, lambda_val])
 
     decoder = new_rdovae_decoder(nb_used_features, nb_bits, bunch, nb_quant, batch_size, cond_size, cond_size2)
+    split_decoder = new_split_decoder(decoder)
 
     dead_zone = Activation('softplus')(Lambda(lambda x: x[:,:,nb_bits:2*nb_bits], name='dead_zone_embed')(quant_embed_dec))
     soft_distr_embed = Activation('sigmoid')(Lambda(lambda x: x[:,:,2*nb_bits:4*nb_bits], name='soft_distr_embed')(quant_embed_dec))
@@ -257,10 +270,10 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, batc
     hardquant = Lambda(hard_quantize)
     dzone = Lambda(apply_dead_zone)
     dze = dzone([ze,dead_zone])
-    combined_output = decoder([hardquant(dze), tf.stop_gradient(quant_embed_dec), gru_state_dec])
+    combined_output = split_decoder([hardquant(dze), tf.stop_gradient(quant_embed_dec), gru_state_dec])
     ndze = noisequant(dze)
-    unquantized_output = decoder([ndze, quant_embed_dec, gru_state_dec])
-    unquantized_output_dec = decoder([tf.stop_gradient(ndze), tf.stop_gradient(quant_embed_dec), gru_state_dec])
+    unquantized_output = split_decoder([ndze, quant_embed_dec, gru_state_dec])
+    unquantized_output_dec = split_decoder([tf.stop_gradient(ndze), tf.stop_gradient(quant_embed_dec), gru_state_dec])
 
     e2 = Concatenate(name="hard_bits")([dze, hard_distr_embed, lambda_bunched])
     e = Concatenate(name="soft_bits")([dze, soft_distr_embed, lambda_bunched])
