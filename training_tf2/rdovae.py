@@ -235,16 +235,28 @@ def new_rdovae_decoder(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, ba
     output = Reshape((-1, nb_used_features))(dec_final(Concatenate()([dec1, dec2, dec3, dec4, dec5, dec6, dec7, dec8])))
     decoder = Model([bits_input, quant_embed_input, gru_state_input], time_reverse(output), name='decoder')
     decoder.nb_bits = nb_bits
+    decoder.bunch = bunch
     return decoder
 
 def new_split_decoder(decoder):
     nb_bits = decoder.nb_bits
+    bunch = decoder.bunch
     bits_input = Input(shape=(None, nb_bits))
     quant_embed_input = Input(shape=(None, 6*nb_bits))
     gru_state_input = Input(shape=(None,16))
 
-    state = Lambda(lambda x: x[:,-1,:])(gru_state_input)
-    output = decoder([bits_input, quant_embed_input, state])
+    range_select = Lambda(lambda x: x[0][:,x[1]:x[2],:])
+    elem_select = Lambda(lambda x: x[0][:,x[1],:])
+    points = [0, 64, 128, 192, 256]
+    outputs = []
+    for i in range(len(points)-1):
+        begin = points[i]//bunch
+        end = points[i+1]//bunch
+        state = elem_select([gru_state_input, 2*end-1])
+        bits = range_select([bits_input, begin, end])
+        embed = range_select([quant_embed_input, begin, end])
+        outputs.append(decoder([bits, embed, state]))
+    output = Concatenate(axis=1)(outputs)
     split = Model([bits_input, quant_embed_input, gru_state_input], output, name="split")
     return split
 

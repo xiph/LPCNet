@@ -82,7 +82,8 @@ quant = np.memmap(bits_file + "-quant.f32", dtype='float32', mode='r')
 state = np.memmap(bits_file + "-state.f32", dtype='float32', mode='r')
 
 quant = np.reshape(quant, (nb_sequences, sequence_size//4, 6*20*4))
-state = np.reshape(state, (nb_sequences, 16))
+state = np.reshape(state, (nb_sequences, sequence_size//2, 16))
+state = state[:,-1,:]
 
 print("shapes are:")
 print(bits.shape)

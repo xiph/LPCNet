@@ -88,15 +88,15 @@ quant_id = quant_id[:,:,0]
 
 
 bits, quant_embed_dec, gru_state_dec = encoder.predict([features, quant_id, lambda_val], batch_size=batch_size)
-dec_out = decoder([bits, quant_embed_dec, gru_state_dec])
+(gru_state_dec).astype('float32').tofile(args.output + "-state.f32")
 
-quant_out, _, _, model_bits, _ = model.predict([features, quant_id, lambda_val], batch_size=batch_size)
 
-dist = rdovae.feat_dist_loss(features, quant_out)
-rate = rdovae.sq1_rate_loss(features, model_bits)
-rate2 = rdovae.sq_rate_metric(features, model_bits)
+#quant_out, _, _, model_bits, _ = model.predict([features, quant_id, lambda_val], batch_size=batch_size)
 
-print(dist, rate, rate2)
+#dist = rdovae.feat_dist_loss(features, quant_out)
+#rate = rdovae.sq1_rate_loss(features, model_bits)
+#rate2 = rdovae.sq_rate_metric(features, model_bits)
+#print(dist, rate, rate2)
 
 print("shapes are:")
 print(bits.shape)
@@ -104,8 +104,11 @@ print(quant_embed_dec.shape)
 print(gru_state_dec.shape)
 
 features.astype('float32').tofile(args.output + "-input.f32")
-quant_out.astype('float32').tofile(args.output + "-enc_dec.f32")
-dec_out.numpy().astype('float32').tofile(args.output + "-dec_out.f32")
+#quant_out.astype('float32').tofile(args.output + "-enc_dec.f32")
 np.round(bits).astype('int16').tofile(args.output + "-bits.s16")
 quant_embed_dec.astype('float32').tofile(args.output + "-quant.f32")
-(gru_state_dec).astype('float32').tofile(args.output + "-state.f32")
+
+gru_state_dec = gru_state_dec[:,-1,:]
+dec_out = decoder([bits, quant_embed_dec, gru_state_dec])
+
+dec_out.numpy().astype('float32').tofile(args.output + "-dec_out.f32")
