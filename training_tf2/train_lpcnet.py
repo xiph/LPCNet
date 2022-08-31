@@ -28,6 +28,8 @@
 # Train an LPCNet model
 
 import argparse
+import os
+
 from dataloader import LPCNetLoader
 
 parser = argparse.ArgumentParser(description='Train an LPCNet model')
@@ -54,9 +56,13 @@ parser.add_argument('--decay', metavar='<decay>', type=float, help='learning rat
 parser.add_argument('--gamma', metavar='<gamma>', type=float, help='adjust u-law compensation (default 2.0, should not be less than 1.0)')
 parser.add_argument('--lookahead', metavar='<nb frames>', default=2, type=int, help='Number of look-ahead frames (default 2)')
 parser.add_argument('--logdir', metavar='<log dir>', help='directory for tensorboard log files')
-
+parser.add_argument('--lpc-gamma', type=float, default=1, help='gamma for LPC weighting')
+parser.add_argument('--cuda-devices', metavar='<cuda devices>', type=str, default="", help='string with comma separated cuda device ids')
 
 args = parser.parse_args()
+
+# set visible cuda devices
+os.environ['CUDA_VISIBLE_DEVICES'] = args.cuda_devices
 
 density = (0.05, 0.05, 0.2)
 if args.density_split is not None:
@@ -188,7 +194,7 @@ else:
 
 model.save_weights('{}_{}_initial.h5'.format(args.output, args.grua_size))
 
-loader = LPCNetLoader(data, features, periods, batch_size, e2e=flag_e2e)
+loader = LPCNetLoader(data, features, periods, batch_size, e2e=flag_e2e, lpc_gamma=args.lpc_gamma)
 
 callbacks = [checkpoint, sparsify, grub_sparsify]
 if args.logdir is not None:
