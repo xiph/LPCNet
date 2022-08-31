@@ -151,8 +151,49 @@ def sq_rate_metric(y_true,y_pred):
     rate = K.sum(rate, axis=-1)
     return K.mean(rate)
 
+def pvq_quant_search(x, k):
+    x = x/tf.reduce_sum(tf.abs(x), axis=-1, keepdims=True)
+    kx = k*x
+    y = tf.round(kx)
+    newk = k
+
+    for j in range(10):
+        #print("y = ", y)
+        #print("iteration ", j)
+        abs_y = tf.abs(y)
+        abs_kx = tf.abs(kx)
+        kk=tf.reduce_sum(abs_y, axis=-1)
+        #print("sums = ", kk)
+        plus = 1.0001*tf.reduce_min((abs_y+.5)/(abs_kx+1e-15), axis=-1)
+        minus = .9999*tf.reduce_max((abs_y-.5)/(abs_kx+1e-15), axis=-1)
+        #print("plus = ", plus)
+        #print("minus = ", minus)
+        factor = tf.where(kk>k, minus, plus)
+        factor = tf.where(kk==k, tf.ones_like(factor), factor)
+        #print("scale = ", factor)
+        factor = tf.expand_dims(factor, axis=-1)
+        #newk = newk * (k/kk)**.2
+        newk = newk*factor
+        kx = newk*x
+        #print("newk = ", newk)
+        #print("unquantized = ", newk*x)
+        y = tf.round(kx)
+
+    #print(y)
+    
+    return y
+
+def pvq_quantize(x, k):
+    x = x/(1e-15+tf.norm(x, axis=-1,keepdims=True))
+    quantized = pvq_quant_search(x, k)
+    quantized = quantized/(1e-15+tf.norm(quantized, axis=-1,keepdims=True))
+    return x + tf.stop_gradient(quantized - x)
+
+
 def var_repeat(x):
     return RepeatVector(K.shape(x[1])[1])(x[0])
+
+nb_state_dim = 24
 
 def new_rdovae_encoder(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, batch_size=128, cond_size=128, cond_size2=256):
     feat = Input(shape=(None, nb_used_features), batch_size=batch_size)
@@ -192,7 +233,7 @@ def new_rdovae_encoder(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, ba
     enc_out = Lambda(lambda x: x[:, bunch//2-1::bunch//2])(enc_out)
     bits = Multiply()([enc_out, quant_scale])
     global_dense1 = Dense(128, activation='tanh', name='gdense1')
-    global_dense2 = Dense(16, activation='tanh', name='gdense2')
+    global_dense2 = Dense(nb_state_dim, activation='tanh', name='gdense2')
     global_bits = global_dense2(global_dense1(d6))
 
     encoder = Model([feat, quant_id, lambda_val], [bits, quant_embed_bunched, global_bits], name='encoder')
@@ -201,7 +242,7 @@ def new_rdovae_encoder(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, ba
 def new_rdovae_decoder(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, batch_size=128, cond_size=128, cond_size2=256):
     bits_input = Input(shape=(None, nb_bits), batch_size=batch_size)
     quant_embed_input = Input(shape=(None, 6*nb_bits), batch_size=batch_size)
-    gru_state_input = Input(shape=(16,), batch_size=batch_size)
+    gru_state_input = Input(shape=(nb_state_dim,), batch_size=batch_size)
 
     
     dec_dense1 = Dense(cond_size2, activation='tanh', kernel_constraint=constraint, name='dec_dense1')
@@ -221,7 +262,7 @@ def new_rdovae_decoder(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, ba
     quant_scale_dec = Activation('softplus')(Lambda(lambda x: x[:,:,:nb_bits], name='quant_scale_embed_dec')(quant_embed_input))
     #gru_state_rep = RepeatVector(64//bunch)(gru_state_input)
 
-    gru_state_rep = Lambda(var_repeat, output_shape=(None, 16)) ([gru_state_input, bits_input])
+    gru_state_rep = Lambda(var_repeat, output_shape=(None, nb_state_dim)) ([gru_state_input, bits_input])
 
     dec_inputs = Concatenate()([div([bits_input,quant_scale_dec]), tf.stop_gradient(quant_embed_input), gru_state_rep])
     dec1 = dec_dense1(time_reverse(dec_inputs))
@@ -243,7 +284,7 @@ def new_split_decoder(decoder):
     bunch = decoder.bunch
     bits_input = Input(shape=(None, nb_bits))
     quant_embed_input = Input(shape=(None, 6*nb_bits))
-    gru_state_input = Input(shape=(None,16))
+    gru_state_input = Input(shape=(None,nb_state_dim))
 
     range_select = Lambda(lambda x: x[0][:,x[1]:x[2],:])
     elem_select = Lambda(lambda x: x[0][:,x[1],:])
@@ -282,6 +323,7 @@ def new_rdovae_model(nb_used_features=20, nb_bits=17, bunch=4, nb_quant=40, batc
     hardquant = Lambda(hard_quantize)
     dzone = Lambda(apply_dead_zone)
     dze = dzone([ze,dead_zone])
+    gru_state_dec = Lambda(lambda x: pvq_quantize(x, 30))(gru_state_dec)
     combined_output = split_decoder([hardquant(dze), tf.stop_gradient(quant_embed_dec), gru_state_dec])
     ndze = noisequant(dze)
     unquantized_output = split_decoder([ndze, quant_embed_dec, gru_state_dec])
