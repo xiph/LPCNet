@@ -1,5 +1,7 @@
 """ module for handling extra model parameters for tf.keras models """
 
+import tensorflow as tf
+
 
 def set_parameter(model, parameter_name, parameter_value, dtype='float32'):
     """ stores parameter_value as non-trainable weight with name parameter_name:0 """
