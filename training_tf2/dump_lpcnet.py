@@ -294,7 +294,7 @@ if __name__ == "__main__":
         hf.write('/* This is *not* an end-to-end model */\n')
         hf.write('/* #define END2END */\n\n')
         
-    hf.write('/* LPC weighting factor */')
+    hf.write('/* LPC weighting factor */\n')
     hf.write('#define LPC_GAMMA ' + str(args.lpc_gamma) +'f\n\n')
 
     embed_size = lpcnet.embed_size
