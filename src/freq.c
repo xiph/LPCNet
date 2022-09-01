@@ -274,7 +274,7 @@ float lpc_from_bands(float *lpc, const float *Ex)
 void lpc_weighting(float *lpc, float gamma)
 {
   int i;
-  float gamma_i = gamma
+  float gamma_i = gamma;
   for (i = 0; i < LPC_ORDER; i++)
   {
     lpc[i] *= gamma_i;

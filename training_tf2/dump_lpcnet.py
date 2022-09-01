@@ -25,6 +25,7 @@
    SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 '''
 
+import os
 import lpcnet
 import sys
 import numpy as np
@@ -36,6 +37,10 @@ from diffembed import diff_Embed
 import h5py
 import re
 import argparse
+
+
+# no cuda devices needed
+os.environ['CUDA_VISIBLE_DEVICES'] = ""
 
 # Flag for dumping e2e (differentiable lpc) network weights
 flag_e2e = False
@@ -249,7 +254,7 @@ diff_Embed.dump_layer = dump_embedding_layer
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('model-file', type=str, help='model weight h5 file')
+    parser.add_argument('model_file', type=str, help='model weight h5 file')
     parser.add_argument('--nnet-header', type=str, help='name of c header file for dumped model', default='nnet_data.h')
     parser.add_argument('--nnet-source', type=str, help='name of c source file for dumped model', default='nnet_data.c')
     parser.add_argument('--lpc-gamma', type=float, help='LPC weighting factor. WARNING: giving an inconsistent value here will severely degrade performance', default=1)
