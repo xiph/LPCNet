@@ -132,7 +132,14 @@ opt = Adam(lr, decay=decay, beta_2=0.99)
 strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
 
 with strategy.scope():
-    model, _, _ = lpcnet.new_lpcnet_model(rnn_units1=args.grua_size, rnn_units2=args.grub_size, batch_size=batch_size, training=True, quantize=quantize, flag_e2e = flag_e2e, cond_size=args.cond_size)
+    model, _, _ = lpcnet.new_lpcnet_model(rnn_units1=args.grua_size,
+                                          rnn_units2=args.grub_size, 
+                                          batch_size=batch_size, training=True,
+                                          quantize=quantize,
+                                          flag_e2e=flag_e2e,
+                                          cond_size=args.cond_size,
+                                          lpc_gamma=args.lpc_gamma
+                                          )
     if not flag_e2e:
         model.compile(optimizer=opt, loss=metric_cel, metrics=metric_cel)
     else:
@@ -194,7 +201,7 @@ else:
 
 model.save_weights('{}_{}_initial.h5'.format(args.output, args.grua_size))
 
-loader = LPCNetLoader(data, features, periods, batch_size, e2e=flag_e2e, lpc_gamma=args.lpc_gamma)
+loader = LPCNetLoader(data, features, periods, batch_size, e2e=flag_e2e)
 
 callbacks = [checkpoint, sparsify, grub_sparsify]
 if args.logdir is not None:

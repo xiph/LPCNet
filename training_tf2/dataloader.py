@@ -13,16 +13,13 @@ def lpc2rc(lpc):
     return rc
 
 class LPCNetLoader(Sequence):
-    def __init__(self, data, features, periods, batch_size, e2e=False, lpc_gamma=1):
+    def __init__(self, data, features, periods, batch_size, e2e=False):
         self.batch_size = batch_size
         self.nb_batches = np.minimum(np.minimum(data.shape[0], features.shape[0]), periods.shape[0])//self.batch_size
         self.data = data[:self.nb_batches*self.batch_size, :]
         self.features = features[:self.nb_batches*self.batch_size, :]
         self.periods = periods[:self.nb_batches*self.batch_size, :]
         self.e2e = e2e
-        self.lpc_gamma = lpc_gamma
-        # hard coded LPC order!
-        self.lpc_weights = np.array([lpc_gamma ** (i + 1) for i in range(16)])
         self.on_epoch_end()
 
     def on_epoch_end(self):
@@ -38,8 +35,6 @@ class LPCNetLoader(Sequence):
         outputs = [out_data]
         inputs = [in_data, features, periods]
         lpc = self.features[self.indices[index*self.batch_size:(index+1)*self.batch_size], 2:-2, -16:]
-        # lpc weighting
-        lpc *= self.lpc_weights
         if self.e2e:
             outputs.append(lpc2rc(lpc))
         else:

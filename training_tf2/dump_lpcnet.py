@@ -34,6 +34,7 @@ from tensorflow.keras.layers import Layer, GRU, Dense, Conv1D, Embedding
 from ulaw import ulaw2lin, lin2ulaw
 from mdense import MDense
 from diffembed import diff_Embed
+from parameters import get_parameter
 import h5py
 import re
 import argparse
@@ -257,7 +258,7 @@ if __name__ == "__main__":
     parser.add_argument('model_file', type=str, help='model weight h5 file')
     parser.add_argument('--nnet-header', type=str, help='name of c header file for dumped model', default='nnet_data.h')
     parser.add_argument('--nnet-source', type=str, help='name of c source file for dumped model', default='nnet_data.c')
-    parser.add_argument('--lpc-gamma', type=float, help='LPC weighting factor. WARNING: giving an inconsistent value here will severely degrade performance', default=1)
+    parser.add_argument('--lpc-gamma', type=float, help='LPC weighting factor. If not specified I will attempt to read it from the model file with 1 as default', default=None)
 
     args = parser.parse_args()
 
@@ -272,7 +273,11 @@ if __name__ == "__main__":
     model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['sparse_categorical_accuracy'])
     #model.summary()
 
+    print(get_parameter(model, 'lpc_gamma'))
+
     model.load_weights(filename, by_name=True)
+    
+    print(get_parameter(model, 'lpc_gamma'))
 
     cfile = args.nnet_source
     hfile = args.nnet_header
@@ -293,9 +298,17 @@ if __name__ == "__main__":
     else:
         hf.write('/* This is *not* an end-to-end model */\n')
         hf.write('/* #define END2END */\n\n')
-        
+    
+    print([weight.name for weight in model.weights])
+    
+    # LPC weighting factor
+    if type(args.lpc_gamma) == type(None):
+        lpc_gamma = get_parameter(model, 'lpc_gamma', 1)
+    else:
+        lpc_gamma = args.lpc_gamma
+    
     hf.write('/* LPC weighting factor */\n')
-    hf.write('#define LPC_GAMMA ' + str(args.lpc_gamma) +'f\n\n')
+    hf.write('#define LPC_GAMMA ' + str(lpc_gamma) +'f\n\n')
 
     embed_size = lpcnet.embed_size
 

@@ -114,7 +114,7 @@ void run_frame_network(LPCNetState *lpcnet, float *gru_a_condition, float *gru_b
 #else
     lpc_from_cepstrum(lpc, features);
 #endif
-#if defined(LPC_GAMMA) && !defined(END2END)
+#ifdef LPC_GAMMA
     lpc_weighting(lpc, LPC_GAMMA);
 #endif
     if (lpcnet->frame_count < 1000) lpcnet->frame_count++;
