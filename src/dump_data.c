@@ -271,7 +271,7 @@ int main(int argc, char **argv) {
     if (count*FRAME_SIZE_5MS>=10000000 && one_pass_completed) break;
     if (training && ++gain_change_count > 2821) {
       float tmp, tmp2;
-      speech_gain = pow(10., MIN_GAIN_DB + ((MAX_GAIN_DB - MIN_GAIN_DB) * ((float) rand() / RAND_MAX ) / 20.));
+      speech_gain = pow(10., (MIN_GAIN_DB + (MAX_GAIN_DB - MIN_GAIN_DB) * ((float) rand() / RAND_MAX )) / 20.);
     #ifdef APPY_RANDOM_GAIN_DROP
       if (rand()%20==0) speech_gain *= .01;
     #endif
