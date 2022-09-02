@@ -41,7 +41,7 @@
 #include <assert.h>
 #include "lpcnet.h"
 #include "lpcnet_private.h"
-
+#include "dump_data.h"
 
 static void biquad(float *y, float mem[2], const float *x, const float *b, const float *a, int N) {
   int i;
@@ -67,10 +67,45 @@ static void rand_resp(float *a, float *b) {
 }
 
 void compute_noise(int *noise, float noise_std) {
+#if NOISE_TYPE == NO_NOISE
+  (void) noise_std;
+  memset(noise, 0, FRAME_SIZE * sizeof(*noise));
+#elif NOISE_TYPE == LEGACY_NOISE
   int i;
   for (i=0;i<FRAME_SIZE;i++) {
     noise[i] = (int)floor(.5 + noise_std*.707*(log_approx((float)rand()/RAND_MAX)-log_approx((float)rand()/RAND_MAX)));
   }
+#elif NOISE_TYPE == VELVET_NOISE
+  /* should actually be put in a state */
+  int i;
+  static int positions[NUM_VELVET_NOISE];
+  
+  memset(noise, 0, FRAME_SIZE * sizeof(*noise));
+
+  for (i = 0; i < NUM_VELVET_NOISE; i ++)
+  {
+    int p;
+    int local_p;
+    int factor;
+    int sign;
+
+    p = positions[i];
+    factor = ((int) noise_std) * velvet_noise_a[i];
+
+    while (p < FRAME_SIZE)
+    {
+      local_p = (int) round((float) rand() / RAND_MAX * (velvet_noise_T[i] - 1));
+      
+      sign = (float) rand() / RAND_MAX < 0.5 ? 1 : -1;
+
+      noise[p + local_p] += factor * sign;
+      
+      p += velvet_noise_T[i];
+    }
+
+    positions[i] = p % FRAME_SIZE;
+  }
+#endif
 }
 
 static short float2short(float x)
@@ -236,14 +271,30 @@ int main(int argc, char **argv) {
     if (count*FRAME_SIZE_5MS>=10000000 && one_pass_completed) break;
     if (training && ++gain_change_count > 2821) {
       float tmp, tmp2;
-      speech_gain = pow(10., (-20+(rand()%40))/20.);
+      speech_gain = pow(10., MIN_GAIN_DB + ((MAX_GAIN_DB - MIN_GAIN_DB) * ((float) rand() / RAND_MAX ) / 20.));
+    #ifdef APPY_RANDOM_GAIN_DROP
       if (rand()%20==0) speech_gain *= .01;
+    #endif
+    #ifdef APPLY_SILENCE
       if (rand()%100==0) speech_gain = 0;
+    #endif
       gain_change_count = 0;
       rand_resp(a_sig, b_sig);
+  #if NOISE_TYPE == LEGACY_NOISE
       tmp = (float)rand()/RAND_MAX;
       tmp2 = (float)rand()/RAND_MAX;
       noise_std = ABS16(-1.5*log(1e-4+tmp)-.5*log(1e-4+tmp2));
+  #elif NOISE_TYPE == VELVET_NOISE
+      noise_std = floor((float)rand()/RAND_MAX * 2.8);
+      (void) tmp;
+      (void) tmp2;
+  #else
+      noise_std = 0;
+      (void) noise_std;
+      (void) tmp;
+      (void) tmp2;
+  #endif
+
     }
     biquad(x, mem_hp_x, x, b_hp, a_hp, FRAME_SIZE);
     biquad(x, mem_resp_x, x, b_sig, a_sig, FRAME_SIZE);

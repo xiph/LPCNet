@@ -231,7 +231,7 @@ class WeightClip(Constraint):
 
 constraint = WeightClip(0.992)
 
-def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features=20, batch_size=128, training=False, adaptation=False, quantize=False, flag_e2e = False, cond_size=128, lpc_order=16, lpc_gamma=1.):
+def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features=20, batch_size=128, training=False, adaptation=False, quantize=False, flag_e2e = False, cond_size=128, lpc_order=16, lpc_gamma=1., no_noise=False):
     pcm = Input(shape=(None, 1), batch_size=batch_size)
     dpcm = Input(shape=(None, 3), batch_size=batch_size)
     feat = Input(shape=(None, nb_used_features), batch_size=batch_size)
@@ -273,7 +273,10 @@ def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features=20, batch_s
     
     embed = diff_Embed(name='embed_sig',initializer = PCMInit())
     cpcm = Concatenate()([tf_l2u(pcm),tf_l2u(tensor_preds),past_errors])
-    cpcm = GaussianNoise(.3)(cpcm)
+    
+    if not no_noise:
+        cpcm = GaussianNoise(.3)(cpcm)
+        
     cpcm = Reshape((-1, embed_size*3))(embed(cpcm))
     cpcm_decoder = Reshape((-1, embed_size*3))(embed(dpcm))
 
@@ -294,10 +297,16 @@ def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features=20, batch_s
                kernel_constraint=constraint, recurrent_constraint = constraint, kernel_regularizer=quant, recurrent_regularizer=quant)
 
     rnn_in = Concatenate()([cpcm, rep(cfeat)])
+    
     md = MDense(pcm_levels, activation='sigmoid', name='dual_fc')
+    
     gru_out1, _ = rnn(rnn_in)
-    gru_out1 = GaussianNoise(.005)(gru_out1)
+    
+    if not no_noise:
+        gru_out1 = GaussianNoise(.005)(gru_out1)
+        
     gru_out2, _ = rnn2(Concatenate()([gru_out1, rep(cfeat)]))
+    
     ulaw_prob = Lambda(tree_to_pdf_train)(md(gru_out2))
 
     if adaptation:
@@ -311,6 +320,7 @@ def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features=20, batch_s
         model = Model([pcm, feat, pitch, lpcoeffs], m_out)
     else:
         model = Model([pcm, feat, pitch], [m_out, cfeat])
+        
     model.rnn_units1 = rnn_units1
     model.rnn_units2 = rnn_units2
     model.nb_used_features = nb_used_features
@@ -322,6 +332,7 @@ def new_lpcnet_model(rnn_units1=384, rnn_units2=16, nb_used_features=20, batch_s
     else:
         encoder = Model([feat, pitch], [cfeat,lpcoeffs])
         dec_rnn_in = Concatenate()([cpcm_decoder, dec_feat])
+        
     dec_gru_out1, state1 = rnn(dec_rnn_in, initial_state=dec_state1)
     dec_gru_out2, state2 = rnn2(Concatenate()([dec_gru_out1, dec_feat]), initial_state=dec_state2)
     dec_ulaw_prob = Lambda(tree_to_pdf_infer)(md(dec_gru_out2))

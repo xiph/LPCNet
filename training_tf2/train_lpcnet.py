@@ -58,6 +58,7 @@ parser.add_argument('--lookahead', metavar='<nb frames>', default=2, type=int, h
 parser.add_argument('--logdir', metavar='<log dir>', help='directory for tensorboard log files')
 parser.add_argument('--lpc-gamma', type=float, default=1, help='gamma for LPC weighting')
 parser.add_argument('--cuda-devices', metavar='<cuda devices>', type=str, default="", help='string with comma separated cuda device ids')
+parser.add_argument('--no-noise', action='store_true', help='disables noise addition during LPCNet training')
 
 args = parser.parse_args()
 
@@ -138,7 +139,8 @@ with strategy.scope():
                                           quantize=quantize,
                                           flag_e2e=flag_e2e,
                                           cond_size=args.cond_size,
-                                          lpc_gamma=args.lpc_gamma
+                                          lpc_gamma=args.lpc_gamma,
+                                          no_noise=args.no_noise
                                           )
     if not flag_e2e:
         model.compile(optimizer=opt, loss=metric_cel, metrics=metric_cel)
