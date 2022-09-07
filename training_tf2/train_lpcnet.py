@@ -177,10 +177,6 @@ features = np.lib.stride_tricks.as_strided(features, shape=(nb_frames, feature_c
                                            strides=(feature_chunk_size*nb_features*sizeof, nb_features*sizeof, sizeof))
 #features = features[:, :, :nb_used_features]
 
-
-periods = (.1 + 50*features[:,:,nb_used_features-2:nb_used_features-1]+100).astype('int16')
-#periods = np.minimum(periods, 255)
-
 # dump models to disk as we go
 checkpoint = ModelCheckpoint('{}_{}_{}.h5'.format(args.output, args.grua_size, '{epoch:02d}'))
 
@@ -203,7 +199,7 @@ else:
 
 model.save_weights('{}_{}_initial.h5'.format(args.output, args.grua_size))
 
-loader = LPCNetLoader(data, features, periods, batch_size, e2e=flag_e2e)
+loader = LPCNetLoader(data, features, batch_size, e2e=flag_e2e)
 
 callbacks = [checkpoint, sparsify, grub_sparsify]
 if args.logdir is not None:
