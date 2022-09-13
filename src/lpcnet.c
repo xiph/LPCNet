@@ -41,7 +41,7 @@
 
 #define PDF_FLOOR 0.002
 
-#define FRAME_INPUT_SIZE (NB_FEATURES + EMBED_PITCH_OUT_SIZE)
+#define FRAME_INPUT_SIZE (FEATURE_CONTEXT*NB_FEATURES + EMBED_PITCH_OUT_SIZE)
 
 
 #if 0
@@ -81,7 +81,6 @@ void rc2lpc(float *lpc, const float *rc)
 
 void run_frame_network(LPCNetState *lpcnet, float *gru_a_condition, float *gru_b_condition, float *lpc, const float *features)
 {
-    NNetState *net;
     float condition[FEATURE_DENSE2_OUT_SIZE];
     float in[FRAME_INPUT_SIZE];
     float conv1_out[FEATURE_CONV1_OUT_SIZE];
@@ -92,10 +91,15 @@ void run_frame_network(LPCNetState *lpcnet, float *gru_a_condition, float *gru_b
     /* Matches the Python code -- the 0.1 avoids rounding issues. */
     pitch = (int)floor(.1 + 50*features[NB_BANDS]+100);
     pitch = IMIN(255, IMAX(33, pitch));
-    net = &lpcnet->nnet;
-    RNN_COPY(in, features, NB_FEATURES);
-    compute_embedding(&embed_pitch, &in[NB_FEATURES], pitch);
-    compute_conv1d(&feature_conv1, conv1_out, net->feature_conv1_state, in);
+    RNN_MOVE(&lpcnet->pitch_mem[0], &lpcnet->pitch_mem[1], FEATURE_CONTEXT-1);
+    lpcnet->pitch_mem[FEATURE_CONTEXT-1] = pitch;
+    compute_embedding(&embed_pitch, &in[FEATURE_CONTEXT*NB_FEATURES], lpcnet->pitch_mem[FEATURE_CONTEXT-FEATURES_DELAY-1]);
+    
+    RNN_MOVE(&lpcnet->feature_mem[0], &lpcnet->feature_mem[NB_FEATURES], (FEATURE_CONTEXT-1)*NB_FEATURES);
+    RNN_COPY(&lpcnet->feature_mem[(FEATURE_CONTEXT-1)*NB_FEATURES], features, NB_FEATURES);
+    RNN_COPY(in, lpcnet->feature_mem, FEATURE_CONTEXT*NB_FEATURES);
+    
+    _lpcnet_compute_dense(&feature_conv1, conv1_out, in);
     if (lpcnet->frame_count < FEATURES_DELAY) RNN_CLEAR(conv1_out, FEATURE_CONV1_OUT_SIZE);
     /*compute_conv1d(&feature_conv2, conv2_out, net->feature_conv2_state, conv1_out);*/
     _lpcnet_compute_dense(&feature_conv2, conv2_out, conv1_out);

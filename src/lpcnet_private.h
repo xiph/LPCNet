@@ -22,8 +22,12 @@
 
 #define FORBIDDEN_INTERP 7
 
+#define FEATURE_CONTEXT 3
+
 struct LPCNetState {
     NNetState nnet;
+    float feature_mem[FEATURE_CONTEXT*NB_FEATURES];
+    int pitch_mem[FEATURE_CONTEXT];
     int last_exc;
     float last_sig[LPC_ORDER];
 #if FEATURES_DELAY>0

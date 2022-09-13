@@ -31,7 +31,8 @@ class LPCNetLoader(Sequence):
         in_data = data[: , :, :1]
         out_data = data[: , :, 1:]
         features = self.features[self.indices[index*self.batch_size:(index+1)*self.batch_size], :, :-16]
-        periods = self.periods[self.indices[index*self.batch_size:(index+1)*self.batch_size], :, :]
+        features = np.concatenate([features[:,:-2,:], features[:,1:-1,:], features[:,2:,:]], axis=-1)
+        periods = self.periods[self.indices[index*self.batch_size:(index+1)*self.batch_size], 1:-1, :]
         outputs = [out_data]
         inputs = [in_data, features, periods]
         lpc = self.features[self.indices[index*self.batch_size:(index+1)*self.batch_size], 1:-1, -16:]
