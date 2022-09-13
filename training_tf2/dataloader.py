@@ -34,7 +34,7 @@ class LPCNetLoader(Sequence):
         periods = self.periods[self.indices[index*self.batch_size:(index+1)*self.batch_size], :, :]
         outputs = [out_data]
         inputs = [in_data, features, periods]
-        lpc = self.features[self.indices[index*self.batch_size:(index+1)*self.batch_size], 2:-2, -16:]
+        lpc = self.features[self.indices[index*self.batch_size:(index+1)*self.batch_size], 1:-1, -16:]
         if self.e2e:
             outputs.append(lpc2rc(lpc))
         else:
