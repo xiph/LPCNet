@@ -13,13 +13,15 @@ def lpc2rc(lpc):
     return rc
 
 class LPCNetLoader(Sequence):
-    def __init__(self, data, features, periods, batch_size, e2e=False):
+    def __init__(self, data, features, periods, batch_size, e2e=False, receptive_field=5, lookahead=2):
         self.batch_size = batch_size
         self.nb_batches = np.minimum(np.minimum(data.shape[0], features.shape[0]), periods.shape[0])//self.batch_size
         self.data = data[:self.nb_batches*self.batch_size, :]
         self.features = features[:self.nb_batches*self.batch_size, :]
         self.periods = periods[:self.nb_batches*self.batch_size, :]
         self.e2e = e2e
+        self.receptive_field = receptive_field
+        self.lookahead = lookahead
         self.on_epoch_end()
 
     def on_epoch_end(self):
@@ -31,11 +33,23 @@ class LPCNetLoader(Sequence):
         in_data = data[: , :, :1]
         out_data = data[: , :, 1:]
         features = self.features[self.indices[index*self.batch_size:(index+1)*self.batch_size], :, :-16]
-        features = np.concatenate([features[:,:-2,:], features[:,1:-1,:], features[:,2:,:]], axis=-1)
-        periods = self.periods[self.indices[index*self.batch_size:(index+1)*self.batch_size], 1:-1, :]
+        periods = self.periods[self.indices[index*self.batch_size:(index+1)*self.batch_size], :, :]
+        flist = []
+        plist = []
+        for k in range(self.receptive_field-1):
+            flist.append(features[:,k:k-self.receptive_field+1,:])
+            plist.append(periods[:,k:k-self.receptive_field+1,:])
+        flist.append(features[:,self.receptive_field-1:,:])
+        plist.append(periods[:,self.receptive_field-1:,:])
+        features = np.concatenate(flist, axis=-1)
+        periods = np.concatenate(plist, axis=-1)
+        
         outputs = [out_data]
         inputs = [in_data, features, periods]
-        lpc = self.features[self.indices[index*self.batch_size:(index+1)*self.batch_size], 1:-1, -16:]
+        if self.lookahead == 0:
+            lpc = self.features[self.indices[index*self.batch_size:(index+1)*self.batch_size], self.receptive_field-1:, -16:]
+        else:
+            lpc = self.features[self.indices[index*self.batch_size:(index+1)*self.batch_size], self.receptive_field-1-self.lookahead:-self.lookahead, -16:]
         if self.e2e:
             outputs.append(lpc2rc(lpc))
         else:

@@ -164,7 +164,7 @@ nb_frames = (len(data)//(2*pcm_chunk_size)-1)//batch_size*batch_size
 features = np.memmap(feature_file, dtype='float32', mode='r')
 
 # limit to discrete number of frames
-data = data[(2-args.lookahead)*2*frame_size:]
+data = data[(4-args.lookahead)*2*frame_size:]
 data = data[:nb_frames*2*pcm_chunk_size]
 
 
@@ -173,7 +173,7 @@ data = np.reshape(data, (nb_frames, pcm_chunk_size, 2))
 #print("ulaw std = ", np.std(out_exc))
 
 sizeof = features.strides[-1]
-features = np.lib.stride_tricks.as_strided(features, shape=(nb_frames, feature_chunk_size+2, nb_features),
+features = np.lib.stride_tricks.as_strided(features, shape=(nb_frames, feature_chunk_size+4, nb_features),
                                            strides=(feature_chunk_size*nb_features*sizeof, nb_features*sizeof, sizeof))
 #features = features[:, :, :nb_used_features]
 
@@ -203,7 +203,7 @@ else:
 
 model.save_weights('{}_{}_initial.h5'.format(args.output, args.grua_size))
 
-loader = LPCNetLoader(data, features, periods, batch_size, e2e=flag_e2e)
+loader = LPCNetLoader(data, features, periods, batch_size, e2e=flag_e2e, receptive_field=5, lookahead=args.lookahead)
 
 callbacks = [checkpoint, sparsify, grub_sparsify]
 if args.logdir is not None:
