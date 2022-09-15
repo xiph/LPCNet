@@ -94,8 +94,8 @@ void compute_noise(int *noise, float noise_std) {
 
     while (p < FRAME_SIZE)
     {
-      local_p = (int) round((float) rand() / RAND_MAX * (velvet_noise_T[i] - 1));
-      
+      local_p = (int) floor((float) rand() / RAND_MAX * velvet_noise_T[i]);
+      if (local_p >= velvet_noise_T[i]) local_p = velvet_noise_T[i] - 1;
       sign = (float) rand() / RAND_MAX < 0.5 ? 1 : -1;
 
       noise[p + local_p] += factor * sign;
@@ -272,7 +272,7 @@ int main(int argc, char **argv) {
     if (training && ++gain_change_count > 2821) {
       float tmp, tmp2;
       speech_gain = pow(10., (MIN_GAIN_DB + (MAX_GAIN_DB - MIN_GAIN_DB) * ((float) rand() / RAND_MAX )) / 20.);
-#ifdef APPY_RANDOM_GAIN_DROP
+    #ifdef APPY_RANDOM_GAIN_DROP
       if (rand()%20==0) speech_gain *= .01;
     #endif
     #ifdef APPLY_SILENCE
