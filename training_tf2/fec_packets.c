@@ -85,9 +85,11 @@ int get_fec_rate(const char * const filename, int packet_index)
     /* read rate */
     if (fread(&rate, sizeof(rate), 1, fid) != 1) goto error;
 
+    fclose(fid);
     return (int) rate;
 
 error:
+    fclose(fid);
     return -1;
 }
 
