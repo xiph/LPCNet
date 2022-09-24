@@ -313,10 +313,10 @@ class StatisticalModel(nn.Module):
         # @JM: theta_soft is not used anymore. Kick it out?
         quant_scale = F.softplus(x[..., 0 * self.latent_dim : 1 * self.latent_dim])
         dead_zone   = F.softplus(x[..., 1 * self.latent_dim : 2 * self.latent_dim])
-        r_hard      =  F.sigmoid(x[..., 2 * self.latent_dim : 3 * self.latent_dim])
-        theta_hard  =  F.sigmoid(x[..., 3 * self.latent_dim : 4 * self.latent_dim])
-        r_soft      =  F.sigmoid(x[..., 4 * self.latent_dim : 5 * self.latent_dim])
-        theta_soft  =  F.sigmoid(x[..., 5 * self.latent_dim : 6 * self.latent_dim])
+        r_hard      = torch.sigmoid(x[..., 2 * self.latent_dim : 3 * self.latent_dim])
+        theta_hard  = torch.sigmoid(x[..., 3 * self.latent_dim : 4 * self.latent_dim])
+        r_soft      = torch.sigmoid(x[..., 4 * self.latent_dim : 5 * self.latent_dim])
+        theta_soft  = torch.sigmoid(x[..., 5 * self.latent_dim : 6 * self.latent_dim])
 
         return {
             'quant_embedding'   : x,
@@ -330,19 +330,58 @@ class StatisticalModel(nn.Module):
 
 
 class RDOVAE(nn.Module):
-    def __init__(self, feature_dim, latent_dim, quant_levels):
+    def __init__(self, feature_dim, latent_dim, quant_levels, cond_size, cond_size2):
 
         super(RDOVAE, self).__init__()
 
         self.feature_dim  = feature_dim
         self.latent_dim   = latent_dim
         self.quant_levels = quant_levels
+        self.cond_size    = cond_size
+        self.cond_size2   = cond_size2
         
         # submodules encoder and decoder share the statistical model
         self.statistical_model = StatisticalModel(quant_levels, latent_dim)
-        self.core_encoder = CoreEncoder(feature_dim, latent_dim, self.statistical_model)
-        self.core_decoder = CoreDecoder(latent_dim, feature_dim, self.statistical_model)
+        self.core_encoder = CoreEncoder(feature_dim, latent_dim, self.statistical_model, cond_size, cond_size2)
+        self.core_decoder = CoreDecoder(latent_dim, feature_dim, self.statistical_model, cond_size, cond_size2)
     
+
+    def get_decoder_chunks(self, z, mode='split', chunks_per_offset=4):
+        """ calculates a set of matching encoder frame and feature frame ranges (CRITICAL!!!) """
+
+        # we don't care for other configurations for the time being
+        assert self.core_decoder.FRAMES_PER_STEP == 4 and self.core_encoder.FRAMES_PER_STEP == 2
+
+        stride = self.core_decoder.FRAMES_PER_STEP // self.core_encoder.FRAMES_PER_STEP
+        num_enc_frames = z.size(1)
+
+        chunks = []
+        
+        if mode == 'split':
+            for offset in range(stride):
+                # calculate split points
+                start = 2 - offset
+                stop = num_enc_frames - offset
+                length = (stop - start)
+                split_points = [start + 2 * int(i * length / chunks_per_offset / 2) for i in range(chunks_per_offset)] + [stop]
+
+                for i in range(chunks_per_offset):
+                    # (enc_frame_start, enc_frame_stop, enc_frame_stride, stride, feature_frame_start, feature_frame_stop)
+                    # encoder range(i, j, 2) maps to feature range(2 * i + 1 - 3, 2 * (j - 1) + 1 + 1) = range(2 * i - 2, 2 * j)
+                    # provided that i - j = 0 mod 2
+                    chunks.append({
+                        'enc_start'         : split_points[i],
+                        'enc_stop'          : split_points[i + 1],
+                        'enc_stride'        : 2,
+                        'features_start'    : 2 * split_points[i] - 2,
+                        'features_stop'     : 2 * split_points[i + 1]
+                    })
+
+        else:
+            raise ValueError(f"get_decoder_chunks: unkown mode {mode}")
+            # ToDo: implement random splits
+        
+        return chunks
 
     def forward(self, features, q_id, distortion_lambda):
 
@@ -352,23 +391,34 @@ class RDOVAE(nn.Module):
         # run encoder
         z, states = self.core_encoder(features, q_id, distortion_lambda)
 
-        # rate estimates and distortion loss
-        hard_rate = hard_rate_estimate(z, statistical_model['r_hard'], statistical_model['theta_hard'], reduce=False)
-        soft_rate = soft_rate_estimate(z, statistical_model['r_soft'], reduce=False)
-        distortion_loss = torch.mean(distortion_lambda * (hard_rate + soft_rate))
-
         # quantization
         z_q = hard_quantize(z)
+        z_n = noise_quantize(z)
         states_q = soft_pvq(states, 30)
 
         # decoder
-        z_even = z[..., 0::2, :]
-        z_odd  = z[..., 1::2, :]
+        chunks = self.get_decoder_chunks(z)
 
-        # for now just run the decoder on odd/even sequence
+        outputs = []
+        for chunk in chunks:
+            # decoder with hard quantized input
+            z_dec_reverse       = torch.flip(z_q[..., chunk['enc_start'] : chunk['enc_stop'] : chunk['enc_stride'], :], [1])
+            q_id_dec_reverse    = torch.flip(q_id[..., chunk['enc_start'] : chunk['enc_stop'] : chunk['enc_stride']], [1])
+            dec_initial_state   = states_q[..., chunk['enc_stop'] - 1 : chunk['enc_stop'], :]
+            features_reverse = self.core_decoder(z_dec_reverse, q_id_dec_reverse, dec_initial_state)
+            outputs.append((torch.flip(features_reverse, [1]), chunk['features_start'], chunk['features_stop']))
 
 
-        return None
+            # decoder with soft quantized input
+            z_dec_reverse       = torch.flip(z_n[..., chunk['enc_start'] : chunk['enc_stop'] : chunk['enc_stride'], :],  [1])
+            features_reverse    = self.core_decoder(z_dec_reverse, q_id_dec_reverse, dec_initial_state)
+            outputs.append((torch.flip(features_reverse, [1]), chunk['features_start'], chunk['features_stop']))          
+
+        return {
+            'outputs'           : outputs,
+            'z'                 : z,
+            'statistical_model' : statistical_model
+        }
 
     def encode(self):
         pass
@@ -376,9 +426,12 @@ class RDOVAE(nn.Module):
     def decode(self):
         pass
 
+# rate estimates and distortion loss
+# hard_rate = hard_rate_estimate(z, statistical_model['r_hard'], statistical_model['theta_hard'], reduce=False)
+# soft_rate = soft_rate_estimate(z, statistical_model['r_soft'], reduce=False)
+# distortion_loss = torch.mean(distortion_lambda * (hard_rate + soft_rate))
 
-
-debug = True
+debug = False
 if __name__ == "__main__" and debug:
     sm = StatisticalModel(40, 80)
     cenc = CoreEncoder(20, 80, sm, 128, 256, 24)
@@ -399,3 +452,7 @@ if __name__ == "__main__" and debug:
     states_reverse = torch.flip(states, [1])
 
     dec_features = cdec(z_reverse[:, ::2, :], q_ids_reverse[:, ::2], states_reverse[:, 0:1, :])
+
+    rdovae = RDOVAE(20, 80, 40, 128, 256)
+
+    model_output = rdovae(features, q_ids, distortion_lambda)
