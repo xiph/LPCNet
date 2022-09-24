@@ -15,7 +15,7 @@ def soft_pvq(x, k):
 
     with torch.no_grad():
         # quantization loop, no need to track gradients here
-        x_norm1 = x_norm1 / torch.sum(torch.abs(x), dim=-1, keepdim=True)
+        x_norm1 = x / torch.sum(torch.abs(x), dim=-1, keepdim=True)
 
         # set initial scaling factor to k
         scale_factor = k
@@ -30,8 +30,8 @@ def soft_pvq(x, k):
             l1_x_quant = torch.sum(abs_x_quant, axis=-1)
 
             # increase, where target is to small and decrease, where target is too large
-            plus  = 1.001 * torch.min((abs_x_quant + 0.5) / (abs_x_scaled + 1e-15), dim=-1)
-            minus = 0.999 * torch.max((abs_x_quant - 0.5) / (abs_x_scaled + 1e-15), dim=-1)
+            plus  = 1.001 * torch.min((abs_x_quant + 0.5) / (abs_x_scaled + 1e-15), dim=-1).values
+            minus = 0.999 * torch.max((abs_x_quant - 0.5) / (abs_x_scaled + 1e-15), dim=-1).values
             factor = torch.where(l1_x_quant > k, minus, plus)
             factor = torch.where(l1_x_quant == k, torch.ones_like(factor), factor)
             scale_factor = scale_factor * factor.unsqueeze(-1)
@@ -45,7 +45,7 @@ def soft_pvq(x, k):
     quantization_error = x_quant_norm2 - x_norm2
 
     # @JM: tensor.detach() is the pytorch equivalent of tf.stop_gradient
-    return x + quantization_error.detach()
+    return x_norm2 + quantization_error.detach()
 
 
 
@@ -66,8 +66,6 @@ def soft_rate_estimate(z, r, reduce=True):
 
 def hard_rate_estimate(z, r, theta, reduce=True):
     """ hard rate approximation """
-
-    # @JM: this rate as loss only affects r and theta. Intended?
 
     z_q = torch.round(z)
     p0 = 1 - r ** (0.5 + 0.5 * theta)
@@ -149,26 +147,27 @@ class CoreEncoder(nn.Module):
 
         # derived parameters
         self.input_dim = self.FRAMES_PER_STEP * self.feature_dim + self.statistical_model.embedding_dim + 1
+        self.conv_input_channels =  5 * cond_size + 3 * cond_size2
 
         # layers
         self.dense_1 = nn.Linear(self.input_dim, self.cond_size2)
-        self.gru_1   = nn.GRU(self.cond_size2, self.cond_size)
+        self.gru_1   = nn.GRU(self.cond_size2, self.cond_size, batch_first=True)
         self.dense_2 = nn.Linear(self.cond_size, self.cond_size2)
-        self.gru_2   = nn.GRU(self.cond_size2, self.cond_size)
+        self.gru_2   = nn.GRU(self.cond_size2, self.cond_size, batch_first=True)
         self.dense_3 = nn.Linear(self.cond_size, self.cond_size2)
-        self.gru_3   = nn.GRU(self.cond_size2, self.cond_size)
+        self.gru_3   = nn.GRU(self.cond_size2, self.cond_size, batch_first=True)
         self.dense_4 = nn.Linear(self.cond_size, self.cond_size)
         self.dense_5 = nn.Linear(self.cond_size, self.cond_size)
-        self.conv1   = nn.Conv1d(self.cond_size, self.output_dim, kernel_size=self.CONV_KERNEL_SIZE, padding='valid')
+        self.conv1   = nn.Conv1d(self.conv_input_channels, self.output_dim, kernel_size=self.CONV_KERNEL_SIZE, padding='valid')
 
         self.state_dense_1 = nn.Linear(self.cond_size, self.STATE_HIDDEN)
         self.state_dense_2 = nn.Linear(self.STATE_HIDDEN, self.state_size)
 
-        # state buffers
+        # state buffers for inference
         self.register_buffer('gru_1_state', torch.zeros((1, 1, cond_size)))
         self.register_buffer('gru_2_state', torch.zeros((1, 1, cond_size)))
         self.register_buffer('gru_3_state', torch.zeros((1, 1, cond_size)))
-        self.register_buffer('conv_state_buffer', torch.zeros((1, 5 * cond_size + 3 * cond_size2, self.CONV_KERNEL_SIZE-1))) # fixme
+        self.register_buffer('conv_state_buffer', torch.zeros((1, self.conv_input_channels, self.CONV_KERNEL_SIZE-1))) # fixme
 
     def forward(self, features, q_id, distortion_lambda):
         
@@ -186,23 +185,23 @@ class CoreEncoder(nn.Module):
 
         # run encoding layer stack
         x1      = torch.tanh(self.dense_1(x))
-        x2, _   = self.gru_1(x1, torch.zeros((batch, 1, self.cond_size)).to(device))
+        x2, _   = self.gru_1(x1, torch.zeros((1, batch, self.cond_size)).to(device))
         x3      = torch.tanh(self.dense_2(x2))
-        x4, _   = self.gru_2(x3, torch.zeros((batch, 1, self.cond_size)).to(device))
+        x4, _   = self.gru_2(x3, torch.zeros((1, batch, self.cond_size)).to(device))
         x5      = torch.tanh(self.dense_3(x4))
-        x6, _   = self.gru_3(x5, torch.zeros((batch, 1, self.cond_size)).to(device))
+        x6, _   = self.gru_3(x5, torch.zeros((1, batch, self.cond_size)).to(device))
         x7      = torch.tanh(self.dense_4(x6))
         x8      = torch.tanh(self.dense_5(x7))
 
-        # DenseNet style concatenation
+        # concatenation of all hidden layer outputs
         x9 = torch.cat((x1, x2, x3, x4, x5, x6, x7, x8), dim=-1)
 
         # pad for causal use @JM: pytorch uses channels first in convolutions
         x9 = F.pad(x9.permute(0, 2, 1), [3, 0])
         z = self.conv1(x9).permute(0, 2, 1)
-        z = z * statistical_model['scaling']
+        z = z * statistical_model['quant_scale']
 
-        # initial states for decoding (key frames?)
+        # initial states for decoding
         states = x6
         states = torch.tanh(self.state_dense_1(states))
         states = torch.tanh(self.state_dense_2(states))
@@ -235,54 +234,54 @@ class CoreDecoder(nn.Module):
         # shared statistical model
         self.statistical_model = statistical_model
 
-
         # derived parameters
         self.input_size = self.input_dim + statistical_model.embedding_dim + self.state_size
+        self.concat_size = 4 * self.cond_size + 4 * self.cond_size2
 
         # layers
         self.dense_1    = nn.Linear(self.input_size, cond_size2)
         self.dense_2    = nn.Linear(cond_size2, cond_size)
         self.dense_3    = nn.Linear(cond_size, cond_size2)
-        self.gru_1      = nn.GRU(cond_size2, cond_size)
-        self.gru_2      = nn.GRU(cond_size, cond_size)
-        self.gru_3      = nn.GRU(cond_size, cond_size)
+        self.gru_1      = nn.GRU(cond_size2, cond_size, batch_first=True)
+        self.gru_2      = nn.GRU(cond_size, cond_size, batch_first=True)
+        self.gru_3      = nn.GRU(cond_size, cond_size, batch_first=True)
         self.dense_4    = nn.Linear(cond_size, cond_size2)
         self.dense_5    = nn.Linear(cond_size2, cond_size2)
 
-        self.output  = nn.Linear(cond_size2, self.FRAMES_PER_STEP * self.output_dim)
+        self.output  = nn.Linear(self.concat_size, self.FRAMES_PER_STEP * self.output_dim)
 
-        # state buffers
-        self.register_buffer('gru_1_state', torch.zeros((1, 1, cond_size)))
-        self.register_buffer('gru_2_state', torch.zeros((1, 1, cond_size)))
-        self.register_buffer('gru_3_state', torch.zeros((1, 1, cond_size)))
+    def forward(self, z, q_id, initial_state):
 
-    def forward(self, z, q_id, initial_state, stateful=False):
+        batch_size = z.size(0)
+        device = z.device
 
         # get statistical model
         statistical_model = self.statistical_model(q_id)
 
         # reverse scaling
-        x = z / statistical_model['scaling']
+        x = z / statistical_model['quant_scale']
 
-        x = torch.cat((x, statistical_model['quant_embedding'].detach(), initial_state))
+        initial_state = torch.repeat_interleave(initial_state, x.size(1), 1)
+
+        x = torch.cat((x, statistical_model['quant_embedding'].detach(), initial_state), dim=-1)
 
         # run decoding layer stack
         x1  = torch.tanh(self.dense_1(x))
-        x2  = torch.tanh(self.dense_1(x1))
-        x3  = torch.tanh(self.dense_1(x2))
+        x2  = torch.tanh(self.dense_2(x1))
+        x3  = torch.tanh(self.dense_3(x2))
 
-        x4, self.gru_1_state = self.gru_1(x3, torch.zeros_like(self.gru_1_state) if stateful else self.gru_1_state)
-        x5, self.gru_1_state = self.gru_1(x4, torch.zeros_like(self.gru_1_state) if stateful else self.gru_1_state)
-        x6, self.gru_1_state = self.gru_1(x5,torch.zeros_like(self.gru_1_state) if stateful else self.gru_1_state)
+        x4, _ = self.gru_1(x3, torch.zeros((1, batch_size, self.cond_size)).to(device))
+        x5, _ = self.gru_2(x4, torch.zeros((1, batch_size, self.cond_size)).to(device))
+        x6, _ = self.gru_3(x5, torch.zeros((1, batch_size, self.cond_size)).to(device))
         
-        x7  = torch.tanh(self.dense_1(x6))
-        x8  = torch.tanh(self.dense_1(x7))
+        x7  = torch.tanh(self.dense_4(x6))
+        x8  = torch.tanh(self.dense_5(x7))
         x9 = torch.cat((x1, x2, x3, x4, x5, x6, x7, x8), dim=-1)
 
 
         # output layer and reshaping
         x10 = torch.tanh(self.output(x9))
-        features = torch.reshape(x10, [x10.size(0), x10.size(1) * self.FRAMES_PER_STEP, x10.size(2) // self.FRAMES_PER_STEP])
+        features = torch.reshape(x10, (x10.size(0), x10.size(1) * self.FRAMES_PER_STEP, x10.size(2) // self.FRAMES_PER_STEP))
 
         return features
 
@@ -311,7 +310,7 @@ class StatisticalModel(nn.Module):
 
         x = self.quant_embedding(quant_ids)
 
-        # @JM: theta_soft is not used in tensoflow code. Why keep r_hard and r_soft separate?
+        # @JM: theta_soft is not used anymore. Kick it out?
         quant_scale = F.softplus(x[..., 0 * self.latent_dim : 1 * self.latent_dim])
         dead_zone   = F.softplus(x[..., 1 * self.latent_dim : 2 * self.latent_dim])
         r_hard      =  F.sigmoid(x[..., 2 * self.latent_dim : 3 * self.latent_dim])
@@ -376,3 +375,27 @@ class RDOVAE(nn.Module):
 
     def decode(self):
         pass
+
+
+
+debug = True
+if __name__ == "__main__" and debug:
+    sm = StatisticalModel(40, 80)
+    cenc = CoreEncoder(20, 80, sm, 128, 256, 24)
+    cdec = CoreDecoder(80, 20, sm, 128, 256, 24)
+    batch_size = 32
+    num_frames = 512
+
+    features = torch.randn((batch_size, num_frames, 20))
+    distortion_lambda = torch.ones((batch_size, num_frames // 2, 1))
+    q_ids = torch.ones((batch_size, num_frames // 2), dtype=torch.int64)
+
+    z, states = cenc(features, q_ids, distortion_lambda)
+
+    states_q = soft_pvq(states, 30)
+
+    z_reverse = torch.flip(z, [1])
+    q_ids_reverse = torch.flip(q_ids, [1])
+    states_reverse = torch.flip(states, [1])
+
+    dec_features = cdec(z_reverse[:, ::2, :], q_ids_reverse[:, ::2], states_reverse[:, 0:1, :])
