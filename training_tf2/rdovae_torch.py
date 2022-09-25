@@ -117,6 +117,20 @@ def distortion_loss(y_true, y_pred):
     return loss
 
 
+# sampling functions
+
+import random
+
+
+def random_split(start, stop, num_splits=3, min_len=3):
+    get_min_len = lambda x : min([x[i+1] - x[i] for i in range(len(x) - 1)])
+    candidate = [start] + sorted([random.randint(start, stop-1) for i in range(num_splits)]) + [stop]
+    
+    while get_min_len(candidate) < min_len: 
+        candidate = [start] + sorted([random.randint(start, stop-1) for i in range(num_splits)]) + [stop]
+    
+    return candidate
+
 
 # RDOVAE module and submodules
 
@@ -169,16 +183,16 @@ class CoreEncoder(nn.Module):
         self.register_buffer('gru_3_state', torch.zeros((1, 1, cond_size)))
         self.register_buffer('conv_state_buffer', torch.zeros((1, self.conv_input_channels, self.CONV_KERNEL_SIZE-1))) # fixme
 
-    def forward(self, features, q_id, distortion_lambda):
+    def forward(self, features, q_id, rate_lambda):
         
         # get statistical model
         statistical_model = self.statistical_model(q_id)
 
         # reshape features
-        x = torch.reshape(features, (features.size(0), features.size(1)//2, 2 * features.size(2)))
+        x = torch.reshape(features, (features.size(0), features.size(1) // self.FRAMES_PER_STEP, self.FRAMES_PER_STEP * features.size(2)))
 
         # prepare input
-        x = torch.cat((x, statistical_model['quant_embedding'].detach(), distortion_lambda), dim=-1)
+        x = torch.cat((x, statistical_model['quant_embedding'].detach(), rate_lambda), dim=-1)
 
         batch = x.size(0)
         device = x.device
@@ -290,7 +304,7 @@ class StatisticalModel(nn.Module):
     def __init__(self, quant_levels, latent_dim):
         """ Statistical model for latent space
         
-            Computes scaling, deadzone, and r and theta 
+            Computes scaling, deadzone, r, and theta 
         
         """
 
@@ -329,6 +343,8 @@ class StatisticalModel(nn.Module):
         }
 
 
+
+
 class RDOVAE(nn.Module):
     def __init__(self, feature_dim, latent_dim, quant_levels, cond_size, cond_size2):
 
@@ -345,51 +361,68 @@ class RDOVAE(nn.Module):
         self.core_encoder = CoreEncoder(feature_dim, latent_dim, self.statistical_model, cond_size, cond_size2)
         self.core_decoder = CoreDecoder(latent_dim, feature_dim, self.statistical_model, cond_size, cond_size2)
     
+    def get_decoder_chunks(self, z_frames, mode='split', chunks_per_offset = 4):
 
-    def get_decoder_chunks(self, z, mode='split', chunks_per_offset=4):
-        """ calculates a set of matching encoder frame and feature frame ranges (CRITICAL!!!) """
-
-        # we don't care for other configurations for the time being
-        assert self.core_decoder.FRAMES_PER_STEP == 4 and self.core_encoder.FRAMES_PER_STEP == 2
+        if self.core_decoder.FRAMES_PER_STEP % self.core_encoder.FRAMES_PER_STEP != 0:
+            raise ValueError(f"get_decoder_chunks_generic: encoder stride does not divide decoder stride")
+        
+        enc_stride = self.core_encoder.FRAMES_PER_STEP
+        dec_stride = self.core_decoder.FRAMES_PER_STEP
 
         stride = self.core_decoder.FRAMES_PER_STEP // self.core_encoder.FRAMES_PER_STEP
-        num_enc_frames = z.size(1)
-
+        
         chunks = []
-        
-        if mode == 'split':
-            for offset in range(stride):
-                # calculate split points
-                start = 2 - offset
-                stop = num_enc_frames - offset
-                length = (stop - start)
-                split_points = [start + 2 * int(i * length / chunks_per_offset / 2) for i in range(chunks_per_offset)] + [stop]
 
-                for i in range(chunks_per_offset):
-                    # (enc_frame_start, enc_frame_stop, enc_frame_stride, stride, feature_frame_start, feature_frame_stop)
-                    # encoder range(i, j, 2) maps to feature range(2 * i + 1 - 3, 2 * (j - 1) + 1 + 1) = range(2 * i - 2, 2 * j)
-                    # provided that i - j = 0 mod 2
-                    chunks.append({
-                        'enc_start'         : split_points[i],
-                        'enc_stop'          : split_points[i + 1],
-                        'enc_stride'        : 2,
-                        'features_start'    : 2 * split_points[i] - 2,
-                        'features_stop'     : 2 * split_points[i + 1]
-                    })
+        for offset in range(stride):
+            # start is the smalles number = offset mod stride that decodes to a valid range
+            start = offset
+            while enc_stride * (start + 1) - dec_stride < 0:
+                start += stride
 
-        else:
-            raise ValueError(f"get_decoder_chunks: unkown mode {mode}")
-            # ToDo: implement random splits
-        
+            # check if start is a valid index
+            if start >= z_frames:
+                raise ValueError("get_decoder_chunks_generic: range too small")
+
+            # stop is the smallest number outside [0, num_enc_frames] that's congruent to offset mod stride
+            stop = z_frames - (z_frames % stride) + offset
+            while stop < z_frames:
+                stop += stride
+
+            # calculate split points
+            length = (stop - start)
+            if mode == 'split':
+                split_points = [start + stride * int(i * length / chunks_per_offset / stride) for i in range(chunks_per_offset)] + [stop]
+            elif mode == 'random_split':
+                split_points = [stride * x + start for x in random_split(0, (stop - start)//stride - 1, chunks_per_offset - 1, 1)]
+            else:
+                raise ValueError(f"get_decoder_chunks_generic: unknown mode {mode}")
+
+
+            for i in range(chunks_per_offset):
+                # (enc_frame_start, enc_frame_stop, enc_frame_stride, stride, feature_frame_start, feature_frame_stop)
+                # encoder range(i, j, stride) maps to feature range(enc_stride * (i + 1) - dec_stride, enc_stride * j)
+                # provided that i - j = 1 mod stride
+                chunks.append({
+                    'z_start'         : split_points[i],
+                    'z_stop'          : split_points[i + 1] - stride + 1,
+                    'z_stride'        : stride,
+                    'features_start'  : enc_stride * (split_points[i] + 1) - dec_stride,
+                    'features_stop'   : enc_stride * (split_points[i + 1] - stride + 1)
+                })
+
         return chunks
 
-    def forward(self, features, q_id, distortion_lambda):
+
+    def forward(self, features, q_id, rate_lambda):
 
         # calculate statistical model from quantization ID
         statistical_model = self.statistical_model(q_id)
 
         # run encoder
-        z, states = self.core_encoder(features, q_id, distortion_lambda)
+        z, states = self.core_encoder(features, q_id, rate_lambda)
+
+        # apply soft dead zone
+        z = soft_dead_zone(z, statistical_model['dead_zone'])
 
         # quantization
         z_q = hard_quantize(z)
@@ -397,20 +430,20 @@ class RDOVAE(nn.Module):
         states_q = soft_pvq(states, 30)
 
         # decoder
-        chunks = self.get_decoder_chunks(z)
+        chunks = self.get_decoder_chunks(z.size(1), mode='split')
 
         outputs = []
         for chunk in chunks:
             # decoder with hard quantized input
-            z_dec_reverse       = torch.flip(z_q[..., chunk['enc_start'] : chunk['enc_stop'] : chunk['enc_stride'], :], [1])
-            q_id_dec_reverse    = torch.flip(q_id[..., chunk['enc_start'] : chunk['enc_stop'] : chunk['enc_stride']], [1])
-            dec_initial_state   = states_q[..., chunk['enc_stop'] - 1 : chunk['enc_stop'], :]
+            z_dec_reverse       = torch.flip(z_q[..., chunk['z_start'] : chunk['z_stop'] : chunk['z_stride'], :], [1])
+            q_id_dec_reverse    = torch.flip(q_id[..., chunk['z_start'] : chunk['z_stop'] : chunk['z_stride']], [1])
+            dec_initial_state   = states_q[..., chunk['z_stop'] - 1 : chunk['z_stop'], :]
             features_reverse = self.core_decoder(z_dec_reverse, q_id_dec_reverse, dec_initial_state)
             outputs.append((torch.flip(features_reverse, [1]), chunk['features_start'], chunk['features_stop']))
 
 
             # decoder with soft quantized input
-            z_dec_reverse       = torch.flip(z_n[..., chunk['enc_start'] : chunk['enc_stop'] : chunk['enc_stride'], :],  [1])
+            z_dec_reverse       = torch.flip(z_n[..., chunk['z_start'] : chunk['z_stop'] : chunk['z_stride'], :],  [1])
             features_reverse    = self.core_decoder(z_dec_reverse, q_id_dec_reverse, dec_initial_state)
             outputs.append((torch.flip(features_reverse, [1]), chunk['features_start'], chunk['features_stop']))          
 
@@ -426,10 +459,6 @@ class RDOVAE(nn.Module):
     def decode(self):
         pass
 
-# rate estimates and distortion loss
-# hard_rate = hard_rate_estimate(z, statistical_model['r_hard'], statistical_model['theta_hard'], reduce=False)
-# soft_rate = soft_rate_estimate(z, statistical_model['r_soft'], reduce=False)
-# distortion_loss = torch.mean(distortion_lambda * (hard_rate + soft_rate))
 
 debug = False
 if __name__ == "__main__" and debug:
@@ -440,10 +469,10 @@ if __name__ == "__main__" and debug:
     num_frames = 512
 
     features = torch.randn((batch_size, num_frames, 20))
-    distortion_lambda = torch.ones((batch_size, num_frames // 2, 1))
+    rate_lambda = torch.ones((batch_size, num_frames // 2, 1))
     q_ids = torch.ones((batch_size, num_frames // 2), dtype=torch.int64)
 
-    z, states = cenc(features, q_ids, distortion_lambda)
+    z, states = cenc(features, q_ids, rate_lambda)
 
     states_q = soft_pvq(states, 30)
 
@@ -455,4 +484,4 @@ if __name__ == "__main__" and debug:
 
     rdovae = RDOVAE(20, 80, 40, 128, 256)
 
-    model_output = rdovae(features, q_ids, distortion_lambda)
+    model_output = rdovae(features, q_ids, rate_lambda)
