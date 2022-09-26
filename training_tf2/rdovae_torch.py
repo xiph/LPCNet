@@ -344,7 +344,6 @@ class StatisticalModel(nn.Module):
 
 
 
-
 class RDOVAE(nn.Module):
     def __init__(self, feature_dim, latent_dim, quant_levels, cond_size, cond_size2):
 
@@ -432,23 +431,25 @@ class RDOVAE(nn.Module):
         # decoder
         chunks = self.get_decoder_chunks(z.size(1), mode='split')
 
-        outputs = []
+        outputs_hq = []
+        outputs_sq = []
         for chunk in chunks:
             # decoder with hard quantized input
             z_dec_reverse       = torch.flip(z_q[..., chunk['z_start'] : chunk['z_stop'] : chunk['z_stride'], :], [1])
             q_id_dec_reverse    = torch.flip(q_id[..., chunk['z_start'] : chunk['z_stop'] : chunk['z_stride']], [1])
             dec_initial_state   = states_q[..., chunk['z_stop'] - 1 : chunk['z_stop'], :]
             features_reverse = self.core_decoder(z_dec_reverse, q_id_dec_reverse, dec_initial_state)
-            outputs.append((torch.flip(features_reverse, [1]), chunk['features_start'], chunk['features_stop']))
+            outputs_hq.append((torch.flip(features_reverse, [1]), chunk['features_start'], chunk['features_stop']))
 
 
             # decoder with soft quantized input
             z_dec_reverse       = torch.flip(z_n[..., chunk['z_start'] : chunk['z_stop'] : chunk['z_stride'], :],  [1])
             features_reverse    = self.core_decoder(z_dec_reverse, q_id_dec_reverse, dec_initial_state)
-            outputs.append((torch.flip(features_reverse, [1]), chunk['features_start'], chunk['features_stop']))          
+            outputs_sq.append((torch.flip(features_reverse, [1]), chunk['features_start'], chunk['features_stop']))          
 
         return {
-            'outputs'           : outputs,
+            'outputs_hard_quant' : outputs_hq,
+            'outputs_soft_quant' : outputs_sq,
             'z'                 : z,
             'statistical_model' : statistical_model
         }
