@@ -12,22 +12,25 @@ checkpoint = dict()
 os.makedirs(checkpoint_dir, exist_ok=True)
 
 # training parameters
-batch_size = 32
-lr = 1e-4
+batch_size = 128
+lr = 1e-3
 epochs = 20
-sequence_length = 1024
-log_interval = 10
+sequence_length = 1000
+lr_decay_factor = 2.5e-5
 
 checkpoint['batch_size'] = batch_size
 checkpoint['lr'] = lr
 checkpoint['epochs'] = epochs
 checkpoint['sequence_length'] = sequence_length
 
+# logging
+log_interval = 10
+
 # device
-device = torch.device("cpu")
+device = torch.device("cuda")
 
 # model parameters
-cond_size  = 128
+cond_size  = 1024
 cond_size2 = 256
 num_features = 20
 latent_dim = 80
@@ -35,7 +38,7 @@ quant_levels = 40
 
 
 # training data
-feature_file = 'input/features_small.f32'
+feature_file = '/local/datasets/lpcnet_large_nonoise/training/features.f32'
 
 # model
 model = RDOVAE(num_features, latent_dim, quant_levels, cond_size, cond_size2)
@@ -56,6 +59,9 @@ checkpoint['dataset_kwargs'] = dict()
 params = [p for p in model.parameters() if p.requires_grad]
 optimizer = torch.optim.Adam(params, lr=lr)
 
+
+# learning rate scheduler
+scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer=optimizer, lr_lambda=lambda x : 1 / (1 + lr_decay_factor * x))
 
 if __name__ == '__main__':
 
@@ -78,10 +84,17 @@ if __name__ == '__main__':
 
         with tqdm.tqdm(dataloader, unit='batch') as tepoch:
             for i, (features, rate_lambda, q_ids) in enumerate(tepoch):
-                optimizer.zero_grad()
 
+                # zero out gradients
+                optimizer.zero_grad()
+                
+                # push inputs to device
+                features    = features.to(device)
+                q_ids       = q_ids.to(device)
+                rate_lambda = rate_lambda.to(device)
+                
                 # run model
-                model_output = model(features.to(device), q_ids.to(device), rate_lambda.to(device))
+                model_output = model(features, q_ids, rate_lambda)
 
                 # collect outputs
                 z                   = model_output['z']
@@ -113,6 +126,8 @@ if __name__ == '__main__':
                 total_loss.backward()
 
                 optimizer.step()
+                
+                scheduler.step()
 
                 # collect running stats
                 running_hard_dist_loss  += float(distortion_loss_hard_quant.detach().cpu())
