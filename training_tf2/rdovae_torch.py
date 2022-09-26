@@ -294,7 +294,7 @@ class CoreDecoder(nn.Module):
 
 
         # output layer and reshaping
-        x10 = torch.tanh(self.output(x9))
+        x10 = self.output(x9)
         features = torch.reshape(x10, (x10.size(0), x10.size(1) * self.FRAMES_PER_STEP, x10.size(2) // self.FRAMES_PER_STEP))
 
         return features
