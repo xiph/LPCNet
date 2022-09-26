@@ -1,5 +1,7 @@
 """ Pytorch implementations of rate distortion optimized variational autoencoder """
 
+import math as m
+
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -47,6 +49,27 @@ def soft_pvq(x, k):
     # @JM: tensor.detach() is the pytorch equivalent of tf.stop_gradient
     return x_norm2 + quantization_error.detach()
 
+def cache_parameters(func):
+    cache = dict()
+    def cached_func(*args):
+        if args in cache:
+            return cache[args]
+        else:
+            cache[args] = func(*args)
+        
+        return cache[args]
+    return cached_func
+        
+@cache_parameters
+def pvq_codebook_size(n, k):
+    
+    if k == 0:
+        return 1
+    
+    if n == 0:
+        return 1
+    
+    return pvq_codebook_size(n - 1, k) + pvq_codebook_size(n, k - 1) + pvq_codebook_size(n - 1, k - 1)
 
 
 def soft_rate_estimate(z, r, reduce=True):
@@ -83,7 +106,7 @@ def hard_rate_estimate(z, r, theta, reduce=True):
 
 
 def soft_dead_zone(x, dead_zone):
-    """ approximates application of a dead zond to x """
+    """ approximates application of a dead zone to x """
     d = dead_zone * 0.05
     return x - d * torch.tanh(x / (0.1 + d))
 
@@ -342,10 +365,12 @@ class StatisticalModel(nn.Module):
             'theta_soft'        : theta_soft
         }
 
-
+class MyDataParallel(nn.DataParallel):
+    def __getattr__(self, name):
+        return getattr(self.module, name)
 
 class RDOVAE(nn.Module):
-    def __init__(self, feature_dim, latent_dim, quant_levels, cond_size, cond_size2):
+    def __init__(self, feature_dim, latent_dim, quant_levels, cond_size, cond_size2, split_mode='split'):
 
         super(RDOVAE, self).__init__()
 
@@ -354,21 +379,25 @@ class RDOVAE(nn.Module):
         self.quant_levels = quant_levels
         self.cond_size    = cond_size
         self.cond_size2   = cond_size2
+        self.split_mode   = split_mode
         
         # submodules encoder and decoder share the statistical model
         self.statistical_model = StatisticalModel(quant_levels, latent_dim)
-        self.core_encoder = CoreEncoder(feature_dim, latent_dim, self.statistical_model, cond_size, cond_size2)
-        self.core_decoder = CoreDecoder(latent_dim, feature_dim, self.statistical_model, cond_size, cond_size2)
-    
-    def get_decoder_chunks(self, z_frames, mode='split', chunks_per_offset = 4):
-
-        if self.core_decoder.FRAMES_PER_STEP % self.core_encoder.FRAMES_PER_STEP != 0:
-            raise ValueError(f"get_decoder_chunks_generic: encoder stride does not divide decoder stride")
+        self.core_encoder = nn.DataParallel(CoreEncoder(feature_dim, latent_dim, self.statistical_model, cond_size, cond_size2))
+        self.core_decoder = nn.DataParallel(CoreDecoder(latent_dim, feature_dim, self.statistical_model, cond_size, cond_size2))
         
-        enc_stride = self.core_encoder.FRAMES_PER_STEP
-        dec_stride = self.core_decoder.FRAMES_PER_STEP
+        self.enc_stride = CoreEncoder.FRAMES_PER_STEP
+        self.dec_stride = CoreDecoder.FRAMES_PER_STEP
+        
+        if self.dec_stride % self.enc_stride != 0:
+            raise ValueError(f"get_decoder_chunks_generic: encoder stride does not divide decoder stride")
+            
+    def get_decoder_chunks(self, z_frames, mode='split', chunks_per_offset = 4):
+        
+        enc_stride = self.enc_stride
+        dec_stride = self.dec_stride
 
-        stride = self.core_decoder.FRAMES_PER_STEP // self.core_encoder.FRAMES_PER_STEP
+        stride = dec_stride // enc_stride
         
         chunks = []
 
@@ -429,7 +458,7 @@ class RDOVAE(nn.Module):
         states_q = soft_pvq(states, 30)
 
         # decoder
-        chunks = self.get_decoder_chunks(z.size(1), mode='split')
+        chunks = self.get_decoder_chunks(z.size(1), mode=self.split_mode)
 
         outputs_hq = []
         outputs_sq = []
@@ -454,11 +483,33 @@ class RDOVAE(nn.Module):
             'statistical_model' : statistical_model
         }
 
-    def encode(self):
-        pass
+    def encode(self, features, q_ids, rate_lambda):
+        """ encoder with quantization and rate estimation """
+        
+        z, states = self.core_encoder(features, q_ids, rate_lambda)
+        stats = self.statistical_model(q_ids)
+        
+        # dead-zone and quantization
+        z = soft_dead_zone(z, stats['dead_zone'])
+        z = torch.round(z)
+        states = soft_pvq(states, 30)
+        
+        rate = hard_rate_estimate(z, stats['r_hard'], stats['theta_hard'])
+        
+        state_size = m.log2(pvq_codebook_size(self.encoder.state_size, 30))
+        
+        return z, states, rate, state_size
 
-    def decode(self):
-        pass
+    def decode(self, z, q_ids, initial_state):
+        """ decoder (flips sequences by itself) """
+        z_reverse       = torch.flip(z, [1])
+        q_ids_reverse   = torch.flip(q_ids, [1])
+        features_reverse = self.core_decoder(z_reverse, q_ids_reverse, initial_state)
+        
+        features = torch.flip(features_reverse, [1])
+        
+        return features
+        
 
 
 debug = False
