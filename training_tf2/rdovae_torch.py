@@ -32,8 +32,8 @@ def soft_pvq(x, k):
             l1_x_quant = torch.sum(abs_x_quant, axis=-1)
 
             # increase, where target is to small and decrease, where target is too large
-            plus  = 1.001 * torch.min((abs_x_quant + 0.5) / (abs_x_scaled + 1e-15), dim=-1).values
-            minus = 0.999 * torch.max((abs_x_quant - 0.5) / (abs_x_scaled + 1e-15), dim=-1).values
+            plus  = 1.0001 * torch.min((abs_x_quant + 0.5) / (abs_x_scaled + 1e-15), dim=-1).values
+            minus = 0.9999 * torch.max((abs_x_quant - 0.5) / (abs_x_scaled + 1e-15), dim=-1).values
             factor = torch.where(l1_x_quant > k, minus, plus)
             factor = torch.where(l1_x_quant == k, torch.ones_like(factor), factor)
             scale_factor = scale_factor * factor.unsqueeze(-1)
@@ -85,8 +85,6 @@ def soft_rate_estimate(z, r, reduce=True):
 
     return rate
 
-    
-
 def hard_rate_estimate(z, r, theta, reduce=True):
     """ hard rate approximation """
 
@@ -103,6 +101,7 @@ def hard_rate_estimate(z, r, theta, reduce=True):
         rate = torch.mean(rate)
 
     return rate
+
 
 
 def soft_dead_zone(x, dead_zone):
