@@ -12,10 +12,10 @@ checkpoint = dict()
 os.makedirs(checkpoint_dir, exist_ok=True)
 
 # training parameters
-batch_size = 128
-lr = 1e-3
+batch_size = 32
+lr = 3e-4
 epochs = 20
-sequence_length = 1000
+sequence_length = 256
 lr_decay_factor = 2.5e-5
 
 checkpoint['batch_size'] = batch_size
@@ -30,7 +30,7 @@ log_interval = 10
 device = torch.device("cuda")
 
 # model parameters
-cond_size  = 1024
+cond_size  = 256
 cond_size2 = 256
 num_features = 20
 latent_dim = 80
@@ -105,7 +105,7 @@ if __name__ == '__main__':
                 # rate loss
                 hard_rate = hard_rate_estimate(z, statistical_model['r_hard'], statistical_model['theta_hard'], reduce=False)
                 soft_rate = soft_rate_estimate(z, statistical_model['r_soft'], reduce=False)
-                rate_loss = torch.mean(rate_lambda.squeeze(-1) * (hard_rate + soft_rate))
+                rate_loss = torch.mean(rate_lambda.squeeze(-1) * (0.1 * hard_rate + soft_rate))
                 hard_rate_metric = torch.mean(hard_rate)
 
                 ## distortion losses
