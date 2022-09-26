@@ -232,8 +232,8 @@ class CoreEncoder(nn.Module):
         # concatenation of all hidden layer outputs
         x9 = torch.cat((x1, x2, x3, x4, x5, x6, x7, x8), dim=-1)
 
-        # pad for causal use @JM: pytorch uses channels first in convolutions
-        x9 = F.pad(x9.permute(0, 2, 1), [3, 0])
+        # pad for causal use
+        x9 = F.pad(x9.permute(0, 2, 1), [self.CONV_KERNEL_SIZE - 1, 0])
         z = self.conv1(x9).permute(0, 2, 1)
         z = z * statistical_model['quant_scale']
 
@@ -364,9 +364,6 @@ class StatisticalModel(nn.Module):
             'theta_soft'        : theta_soft
         }
 
-class MyDataParallel(nn.DataParallel):
-    def __getattr__(self, name):
-        return getattr(self.module, name)
 
 class RDOVAE(nn.Module):
     def __init__(self, feature_dim, latent_dim, quant_levels, cond_size, cond_size2, split_mode='split'):
@@ -493,7 +490,7 @@ class RDOVAE(nn.Module):
         z = torch.round(z)
         states = soft_pvq(states, 30)
         
-        rate = hard_rate_estimate(z, stats['r_hard'], stats['theta_hard'])
+        rate = hard_rate_estimate(z, stats['r_hard'], stats['theta_hard'], reduce=False)
         
         state_size = m.log2(pvq_codebook_size(self.encoder.state_size, 30))
         
@@ -501,6 +498,7 @@ class RDOVAE(nn.Module):
 
     def decode(self, z, q_ids, initial_state):
         """ decoder (flips sequences by itself) """
+        
         z_reverse       = torch.flip(z, [1])
         q_ids_reverse   = torch.flip(q_ids, [1])
         features_reverse = self.core_decoder(z_reverse, q_ids_reverse, initial_state)
