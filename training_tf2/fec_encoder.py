@@ -6,23 +6,41 @@ import argparse
 
 import numpy as np
 from scipy.io import wavfile
+import tensorflow as tf
 
-from rdovae import new_rdovae_model, pvq_quantize
+from rdovae import new_rdovae_model, pvq_quantize, apply_dead_zone, sq_rate_metric
 from fec_packets import write_fec_packets, read_fec_packets
 
-parser = argparse.ArgumentParser(description='Encode redundancy for Opus neural FEC. Designed for use with voip application and 20ms frames')
 
-parser.add_argument('input', metavar='<input signal>', help='audio input (.wav or .raw or .pcm as int16)')
-parser.add_argument('weights', metavar='<weights>', help='trained model file (.h5)')
-parser.add_argument('enc_lambda', metavar='<lambda>', type=float, help='lambda for controlling encoder rate (default=0.0007)', default=0.0007)
-parser.add_argument('output', type=str, help='output file (will be extended with .fec)')
+debug = False
 
-parser.add_argument('--dump-data', type=str, default='./dump_data', help='path to dump data executable (default ./dump_data)')
-parser.add_argument('--cond-size', metavar='<units>', default=1024, type=int, help='number of units in conditioning network (default 1024)')
-parser.add_argument('--num-redundancy-frames', default=64, type=int, help='number of redundancy frames per packet (default 64)')
-parser.add_argument('--extra-delay', default=0, type=int, help="last features in packet are calculated with the decoder aligned samples, use this option to add extra delay (in samples at 16kHz)")
+if debug:
+    args = type('dummy', (object,),
+    {
+        'input' : 'item1.wav',
+        'weights' : 'testout/rdovae_alignment_fix_1024_120.h5',
+        'enc_lambda' : 0.0007,
+        'output' : "test_0007.fec",
+        'cond_size' : 1024,
+        'num_redundancy_frames' : 64,
+        'extra_delay' : 0,
+        'dump_data' : './dump_data'
+    })()
+    os.environ['CUDA_VISIBLE_DEVICES']=""
+else:
+    parser = argparse.ArgumentParser(description='Encode redundancy for Opus neural FEC. Designed for use with voip application and 20ms frames')
 
-args = parser.parse_args()
+    parser.add_argument('input', metavar='<input signal>', help='audio input (.wav or .raw or .pcm as int16)')
+    parser.add_argument('weights', metavar='<weights>', help='trained model file (.h5)')
+    parser.add_argument('enc_lambda', metavar='<lambda>', type=float, help='lambda for controlling encoder rate (default=0.0007)', default=0.0007)
+    parser.add_argument('output', type=str, help='output file (will be extended with .fec)')
+
+    parser.add_argument('--dump-data', type=str, default='./dump_data', help='path to dump data executable (default ./dump_data)')
+    parser.add_argument('--cond-size', metavar='<units>', default=1024, type=int, help='number of units in conditioning network (default 1024)')
+    parser.add_argument('--num-redundancy-frames', default=64, type=int, help='number of redundancy frames per packet (default 64)')
+    parser.add_argument('--extra-delay', default=0, type=int, help="last features in packet are calculated with the decoder aligned samples, use this option to add extra delay (in samples at 16kHz)")
+
+    args = parser.parse_args()
 
 model, encoder, decoder = new_rdovae_model(nb_used_features=20, nb_bits=80, batch_size=1, cond_size=args.cond_size)
 model.load_weights(args.weights)
@@ -93,25 +111,38 @@ print("running fec encoder...")
 symbols, quant_embed_dec, gru_state_dec = encoder.predict([features, quant_id, enc_lambda])
 
 # apply quantization
+nsymbols = 80
+dead_zone = tf.math.softplus(quant_embed_dec[:, :, nsymbols : 2 * nsymbols])
+symbols = apply_dead_zone([symbols, dead_zone]).numpy()
 qsymbols = np.round(symbols)
 quant_gru_state_dec = pvq_quantize(gru_state_dec, 30)
+
+# rate estimate
+hard_distr_embed = tf.math.sigmoid(quant_embed_dec[:, :, 4 * nsymbols : ]).numpy()
+rate_input = np.concatenate((symbols, hard_distr_embed, enc_lambda), axis=-1)
+rates = sq_rate_metric(None, rate_input, reduce=False).numpy()
 
 # run decoder
 input_length = args.num_redundancy_frames // 2
 offset = args.num_redundancy_frames - 1
 
 packets = []
+packet_sizes = []
 
 for i in range(offset, num_frames):
     print(f"processing frame {i - offset}...")
     features = decoder.predict([symbols[:, i - 2 * input_length + 1 : i + 1 : 2, :], quant_embed_dec[:, :input_length, :], quant_gru_state_dec[:, i, :]])
     packets.append(features)
+    packet_size = 8 * int((np.sum(rates[:, i - 2 * input_length + 1 : i + 1 : 2]) + 7) / 8) + 64
+    packet_sizes.append(packet_size)
 
 
 # write packets
 packet_file = args.output + '.fec' if not args.output.endswith('.fec') else args.output
-write_fec_packets(packet_file, packets, None)
+write_fec_packets(packet_file, packets, packet_sizes)
 
+
+print(f"average redundancy rate: {int(round(sum(packet_sizes) / len(packet_sizes) * 50 / 1000))} kbps")
 
 
 if False:
