@@ -12,7 +12,7 @@ from rdovae_torch import RDOVAE
 from fec_packets import write_fec_packets, read_fec_packets
 
 
-debug = False
+debug = True
 
 if debug:
     args = type('dummy', (object,),
@@ -21,7 +21,7 @@ if debug:
         'checkpoint' : 'torch_testrun_256/checkpoint_epoch _30.pth',
         'enc_lambda' : 0.0007,
         'output' : "test_0007.fec",
-        'num_redundancy_frames' : 64,
+        'num_redundancy_frames' : 50,
         'extra_delay' : 0,
         'dump_data' : './dump_data'
     })()
