@@ -339,6 +339,10 @@ class StatisticalModel(nn.Module):
 
         # quantization embedding
         self.quant_embedding    = nn.Embedding(quant_levels, self.embedding_dim)
+        
+        # initialize embedding to 0
+        with torch.no_grad():
+            self.quant_embedding.weight[:] = 0
 
 
     def forward(self, quant_ids):
