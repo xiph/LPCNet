@@ -68,14 +68,11 @@ def read_fec_packets(filename):
         rates = []
         packets = []
         for i in range(num_packets):
-            
-            
+                     
             rate = np.frombuffer(f.read(2), dtype=np.int16).item
             rates.append(rate)
             
-            print(subframe_size * subframes_per_packet)
             features = np.reshape(np.frombuffer(f.read(subframe_size * subframes_per_packet), dtype=np.float32), dummy_features.shape)
-            print(features.shape)
             packet = np.flip(features, axis=-2)
             packets.append(packet)
             
