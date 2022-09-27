@@ -7,21 +7,24 @@ from rdovae_torch import RDOVAE, distortion_loss, hard_rate_estimate, soft_rate_
 from rdovae_dataset_torch import RDOVAEDataset
 
 # checkpoints
-checkpoint_dir = './checkpoints'
+checkpoint_dir = './torch_testrun_256_adam'
 checkpoint = dict()
 os.makedirs(checkpoint_dir, exist_ok=True)
 
 # training parameters
 batch_size = 32
 lr = 3e-4
-epochs = 20
+epochs = 120
 sequence_length = 256
 lr_decay_factor = 2.5e-5
+adam_betas = [0.9, 0.99]
+adam_eps = 1e-7
 
 checkpoint['batch_size'] = batch_size
 checkpoint['lr'] = lr
 checkpoint['epochs'] = epochs
 checkpoint['sequence_length'] = sequence_length
+checkpoint['adam_betas'] = adam_betas
 
 # logging
 log_interval = 10
@@ -49,15 +52,15 @@ checkpoint['state_dict']    = model.state_dict()
 
 
 # dataloader
-dataset = RDOVAEDataset(feature_file, 1024, 20, 36, 0.0007, 0.002, 2)
+dataset = RDOVAEDataset(feature_file, sequence_length, num_features, 36, 0.0007, 0.002, model.enc_stride)
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True)
 
-checkpoint['dataset_args'] = (feature_file, 1024, 20, 36, 0.0007, 0.002, 2)
+checkpoint['dataset_args'] = (feature_file, sequence_length, num_features, 36, 0.0007, 0.002, model.enc_stride)
 checkpoint['dataset_kwargs'] = dict()
 
 # optimizer
 params = [p for p in model.parameters() if p.requires_grad]
-optimizer = torch.optim.Adam(params, lr=lr)
+optimizer = torch.optim.Adam(params, lr=lr, betas=adam_betas, eps=adam_eps)
 
 
 # learning rate scheduler
