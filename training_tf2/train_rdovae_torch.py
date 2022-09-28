@@ -24,6 +24,7 @@ model_group.add_argument('--state-dim', type=int, help="dimensionality of transf
 model_group.add_argument('--quant-levels', type=int, help="number of quantization levels, default: 40", default=40)
 model_group.add_argument('--lambda-min', type=float, help="minimal value for rate lambda, default: 7e-4", default=7e-4)
 model_group.add_argument('--lambda-max', type=float, help="maximal value for rate lambda, default: 2e-3", default=2e-3)
+model_group.add_argument('--decoder-state-method', choices=["repeat", "gru_init"],  help="specifies how the decoder uses the transfered state, default: repeat", default='repeat')
 
 training_group = parser.add_argument_group(title="training parameters")
 training_group.add_argument('--batch-size', type=int, help="batch size, default: 32", default=32)
@@ -32,6 +33,7 @@ training_group.add_argument('--epochs', type=int, help='number of training epoch
 training_group.add_argument('--sequence-length', type=int, help='sequence length, needs to be divisible by 4, default: 256', default=256)
 training_group.add_argument('--lr-decay-factor', type=float, help='learning rate decay factor, default: 2.5e-5', default=2.5e-5)
 training_group.add_argument('--split-mode', type=str, choices=['split', 'random_split'], help='splitting mode for decoder input, default: split', default='split')
+training_group.add_argument('--enable-first-frame-loss', action='store_true', default=False, help='enables dedicated distortion loss on first 4 decoder frames')
 
 args = parser.parse_args()
 
@@ -76,6 +78,7 @@ quant_levels = args.quant_levels
 lambda_min = args.lambda_min
 lambda_max = args.lambda_max
 state_dim = args.state_dim
+decoder_state_method = args.decoder_state_method
 # not expsed
 num_features = 20
 
@@ -85,7 +88,7 @@ feature_file = args.features
 
 # model
 checkpoint['model_args']    = (num_features, latent_dim, quant_levels, cond_size, cond_size2)
-checkpoint['model_kwargs']  = {'state_dim': state_dim, 'split_mode' : split_mode}
+checkpoint['model_kwargs']  = {'state_dim': state_dim, 'split_mode' : split_mode, 'dec_state_method' : decoder_state_method}
 model = RDOVAE(*checkpoint['model_args'], **checkpoint['model_kwargs'])
 
 
@@ -174,7 +177,7 @@ if __name__ == '__main__':
                 # total loss
                 total_loss = rate_loss + (distortion_loss_hard_quant + distortion_loss_soft_quant) / 2
                 
-                if False:
+                if args.enable_first_frame_loss:
                     total_loss = total_loss + 0.5 * torch.relu(first_frame_loss - distortion_loss_hard_quant)
 
                 total_loss.backward()

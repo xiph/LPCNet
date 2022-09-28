@@ -290,7 +290,7 @@ class CoreDecoder(nn.Module):
 
     FRAMES_PER_STEP = 4
 
-    def __init__(self, input_dim, output_dim, statistical_model, cond_size, cond_size2, state_size=24, state_mode='repeat'):
+    def __init__(self, input_dim, output_dim, statistical_model, cond_size, cond_size2, state_size=24, state_method='repeat'):
         """ core decoder for RDOVAE
         
             Computes features from latents, initial state, and quantization index
@@ -305,13 +305,13 @@ class CoreDecoder(nn.Module):
         self.cond_size  = cond_size
         self.cond_size2 = cond_size2
         self.state_size = state_size
-        self.state_mode = state_mode
+        self.state_method = state_method
 
         # shared statistical model
         self.statistical_model = statistical_model
 
         # derived parameters
-        if state_mode == 'repeat':
+        if state_method == 'repeat':
             self.input_size = self.input_dim + statistical_model.embedding_dim + self.state_size
         else:
             self.input_size = self.input_dim + statistical_model.embedding_dim
@@ -330,7 +330,7 @@ class CoreDecoder(nn.Module):
 
         self.output  = nn.Linear(self.concat_size, self.FRAMES_PER_STEP * self.output_dim)
 
-        if state_mode == 'gru_init':
+        if state_method == 'gru_init':
             self.gru_1_init = nn.Linear(self.state_size, self.cond_size)
             self.gru_2_init = nn.Linear(self.state_size, self.cond_size)
             self.gru_3_init = nn.Linear(self.state_size, self.cond_size)
@@ -349,7 +349,7 @@ class CoreDecoder(nn.Module):
         # reverse scaling
         x = z / statistical_model['quant_scale']
 
-        if self.state_mode == 'repeat':
+        if self.state_method == 'repeat':
             initial_state = torch.repeat_interleave(initial_state, x.size(1), 1)
             x = torch.cat((x, statistical_model['quant_embedding'].detach(), initial_state), dim=-1)
             
@@ -357,12 +357,12 @@ class CoreDecoder(nn.Module):
             gru_2_state = torch.zeros((1, batch_size, self.cond_size)).to(device)
             gru_3_state = torch.zeros((1, batch_size, self.cond_size)).to(device)
             
-        elif self.state_mode == 'gru_init':
+        elif self.state_method == 'gru_init':
             x = torch.cat((x, statistical_model['quant_embedding'].detach()), dim=-1)
             
-            gru_1_state = torch.tanh(self.gru_1_init(initial_state).unsqueeze(0))
-            gru_2_state = torch.tanh(self.gru_2_init(initial_state).unsqueeze(0))
-            gru_3_state = torch.tanh(self.gru_3_init(initial_state).unsqueeze(0))
+            gru_1_state = torch.tanh(self.gru_1_init(initial_state).permute(1, 0, 2))
+            gru_2_state = torch.tanh(self.gru_2_init(initial_state).permute(1, 0, 2))
+            gru_3_state = torch.tanh(self.gru_3_init(initial_state).permute(1, 0, 2))
 
         # run decoding layer stack
         x1  = torch.tanh(self.dense_1(x))
@@ -433,7 +433,7 @@ class StatisticalModel(nn.Module):
 
 
 class RDOVAE(nn.Module):
-    def __init__(self, feature_dim, latent_dim, quant_levels, cond_size, cond_size2, state_dim=24, split_mode='split', clip_weights=True):
+    def __init__(self, feature_dim, latent_dim, quant_levels, cond_size, cond_size2, state_dim=24, split_mode='split', clip_weights=True, dec_state_method='repeat'):
 
         super(RDOVAE, self).__init__()
 
@@ -447,8 +447,8 @@ class RDOVAE(nn.Module):
         
         # submodules encoder and decoder share the statistical model
         self.statistical_model = StatisticalModel(quant_levels, latent_dim)
-        self.core_encoder = nn.DataParallel(CoreEncoder(feature_dim, latent_dim, self.statistical_model, cond_size, cond_size2))
-        self.core_decoder = nn.DataParallel(CoreDecoder(latent_dim, feature_dim, self.statistical_model, cond_size, cond_size2))
+        self.core_encoder = nn.DataParallel(CoreEncoder(feature_dim, latent_dim, self.statistical_model, cond_size, cond_size2, state_size=state_dim))
+        self.core_decoder = nn.DataParallel(CoreDecoder(latent_dim, feature_dim, self.statistical_model, cond_size, cond_size2, state_size=state_dim, state_method=dec_state_method))
         
         self.enc_stride = CoreEncoder.FRAMES_PER_STEP
         self.dec_stride = CoreDecoder.FRAMES_PER_STEP
