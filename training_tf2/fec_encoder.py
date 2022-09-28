@@ -162,6 +162,6 @@ if args.debug_output:
         test_features_full = np.zeros((test_features.shape[1], nb_features), dtype=np.float32)
         test_features_full[:, :nb_used_features] = test_features[0, :, :]
 
-        print(f"writing debug output {packet_file[:-4] + f'_torch_batch{batch}_offset{offset}.f32'}")
-        test_features_full.tofile(packet_file[:-4] + f'_torch_batch{batch}_offset{offset}.f32')
+        print(f"writing debug output {packet_file[:-4] + f'_tf_batch{batch}_offset{offset}.f32'}")
+        test_features_full.tofile(packet_file[:-4] + f'_tf_batch{batch}_offset{offset}.f32')
 
