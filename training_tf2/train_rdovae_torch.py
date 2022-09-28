@@ -1,4 +1,5 @@
 import os
+import argparse
 
 import torch
 import tqdm
@@ -6,22 +7,57 @@ import tqdm
 from rdovae_torch import RDOVAE, distortion_loss, hard_rate_estimate, soft_rate_estimate
 from rdovae_dataset_torch import RDOVAEDataset
 
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument('features', type=str, help='path to feature file in .f32 format')
+parser.add_argument('output', type=str, help='path to output folder')
+
+parser.add_argument('--cuda-visible-devices', type=str, help="comma separates list of cuda visible device indices, default: ''", default="")
+
+
+model_group = parser.add_argument_group(title="model parameters")
+model_group.add_argument('--latent-dim', type=int, help="number of symbols produces by encoder, default: 80", default=80)
+model_group.add_argument('--cond-size', type=int, help="first conditioning size, default: 256", default=256)
+model_group.add_argument('--cond-size2', type=int, help="second conditioning size, default: 256", default=256)
+model_group.add_argument('--state-dim', type=int, help="dimensionality of transfered state, default: 24", default=24)
+model_group.add_argument('--quant-levels', type=int, help="number of quantization levels, default: 40", default=40)
+model_group.add_argument('--lambda-min', type=float, help="minimal value for rate lambda, default: 7e-4", default=7e-4)
+model_group.add_argument('--lambda-max', type=float, help="maximal value for rate lambda, default: 2e-3", default=2e-3)
+
+training_group = parser.add_argument_group(title="training parameters")
+training_group.add_argument('--batch-size', type=int, help="batch size, default: 32", default=32)
+training_group.add_argument('--lr', type=float, help='learning rate, default: 3e-4', default=3e-4)
+training_group.add_argument('--epochs', type=int, help='number of training epochs, default: 100', default=100)
+training_group.add_argument('--sequence-length', type=int, help='sequence length, needs to be divisible by 4, default: 256', default=256)
+training_group.add_argument('--lr-decay-factor', type=float, help='learning rate decay factor, default: 2.5e-5', default=2.5e-5)
+training_group.add_argument('--split-mode', type=str, choices=['split', 'random_split'], help='splitting mode for decoder input, default: split', default='split')
+
+args = parser.parse_args()
+
+# set visible devices
+os.environ['CUDA_VISIBLE_DEVICES'] = args.cuda_visible_devices
+
 # checkpoints
-checkpoint_dir = './torch_testrun_256_adam'
+checkpoint_dir = os.path.join(args.output, 'checkpoints')
 checkpoint = dict()
 os.makedirs(checkpoint_dir, exist_ok=True)
 
 # training parameters
-batch_size = 32
-lr = 3e-4
-epochs = 120
-sequence_length = 256
-lr_decay_factor = 2.5e-5
+batch_size = args.batch_size
+lr = args.lr
+epochs = args.epochs
+sequence_length = args.sequence_length
+lr_decay_factor = args.lr_decay_factor
+split_mode = args.split_mode
+# not exposed
 adam_betas = [0.9, 0.99]
 adam_eps = 1e-7
 
 checkpoint['batch_size'] = batch_size
 checkpoint['lr'] = lr
+checkpoint['lr_decay_factor'] = lr_decay_factor 
+checkpoint['split_mode'] = split_mode
 checkpoint['epochs'] = epochs
 checkpoint['sequence_length'] = sequence_length
 checkpoint['adam_betas'] = adam_betas
@@ -30,33 +66,39 @@ checkpoint['adam_betas'] = adam_betas
 log_interval = 10
 
 # device
-device = torch.device("cuda")
+device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 # model parameters
-cond_size  = 256
-cond_size2 = 256
+cond_size  = args.cond_size
+cond_size2 = args.cond_size2
+latent_dim = args.latent_dim
+quant_levels = args.quant_levels
+lambda_min = args.lambda_min
+lambda_max = args.lambda_max
+state_dim = args.state_dim
+# not expsed
 num_features = 20
-latent_dim = 80
-quant_levels = 40
 
 
 # training data
-feature_file = '/local/datasets/lpcnet_large_nonoise/training/features.f32'
+feature_file = args.features
 
 # model
-model = RDOVAE(num_features, latent_dim, quant_levels, cond_size, cond_size2)
-
 checkpoint['model_args']    = (num_features, latent_dim, quant_levels, cond_size, cond_size2)
-checkpoint['model_kwargs']  = dict()
+checkpoint['model_kwargs']  = {'state_dim': state_dim, 'split_mode' : split_mode}
+model = RDOVAE(*checkpoint['model_args'], **checkpoint['model_kwargs'])
+
+
 checkpoint['state_dict']    = model.state_dict()
 
 
 # dataloader
-dataset = RDOVAEDataset(feature_file, sequence_length, num_features, 36, 0.0007, 0.002, model.enc_stride)
+checkpoint['dataset_args'] = (feature_file, sequence_length, num_features, 36, lambda_min, lambda_max, model.enc_stride)
+checkpoint['dataset_kwargs'] = dict()
+dataset = RDOVAEDataset(*checkpoint['dataset_args'], **checkpoint['dataset_kwargs'])
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True)
 
-checkpoint['dataset_args'] = (feature_file, sequence_length, num_features, 36, 0.0007, 0.002, model.enc_stride)
-checkpoint['dataset_kwargs'] = dict()
+
 
 # optimizer
 params = [p for p in model.parameters() if p.requires_grad]
@@ -84,6 +126,7 @@ if __name__ == '__main__':
         running_total_loss      = 0
         running_rate_metric     = 0
         previous_total_loss     = 0
+        running_first_frame_loss = 0
 
         with tqdm.tqdm(dataloader, unit='batch') as tepoch:
             for i, (features, rate_lambda, q_ids) in enumerate(tepoch):
@@ -118,17 +161,27 @@ if __name__ == '__main__':
                 for dec_features, start, stop in outputs_hard_quant:
                     distortion_loss_hard_quant += distortion_loss(features[..., start : stop, :], dec_features) / len(outputs_hard_quant)
 
+                first_frame_loss = torch.zeros_like(rate_loss)
+                for dec_features, start, stop in outputs_hard_quant:
+                    first_frame_loss += distortion_loss(features[..., stop-4 : stop, :], dec_features[..., -4:, :]) / len(outputs_hard_quant)
+
                 # soft quantized decoder input
                 distortion_loss_soft_quant = torch.zeros_like(rate_loss)
                 for dec_features, start, stop in outputs_soft_quant:
                     distortion_loss_soft_quant += distortion_loss(features[..., start : stop, :], dec_features) / len(outputs_soft_quant)
 
+
                 # total loss
                 total_loss = rate_loss + (distortion_loss_hard_quant + distortion_loss_soft_quant) / 2
+                
+                if False:
+                    total_loss = total_loss + 0.5 * torch.relu(first_frame_loss - distortion_loss_hard_quant)
 
                 total_loss.backward()
 
                 optimizer.step()
+                
+                model.clip_weights()
                 
                 scheduler.step()
 
@@ -138,6 +191,7 @@ if __name__ == '__main__':
                 running_rate_loss       += float(rate_loss.detach().cpu())
                 running_rate_metric     += float(hard_rate_metric.detach().cpu())
                 running_total_loss      += float(total_loss.detach().cpu())
+                running_first_frame_loss += float(first_frame_loss.detach().cpu())
 
                 if (i + 1) % log_interval == 0:
                     current_loss = (running_total_loss - previous_total_loss) / log_interval
@@ -147,12 +201,14 @@ if __name__ == '__main__':
                         dist_hq=running_hard_dist_loss / (i + 1),
                         dist_sq=running_soft_dist_loss / (i + 1),
                         rate_loss=running_rate_loss / (i + 1),
-                        rate=running_rate_metric / (i + 1)
+                        rate=running_rate_metric / (i + 1),
+                        ffloss=running_first_frame_loss / (i + 1)
                     )
                     previous_total_loss = running_total_loss
 
         # save checkpoint
-        checkpoint_path = os.path.join(checkpoint_dir, f'checkpoint_epoch _{epoch}.pth')
+        checkpoint_path = os.path.join(checkpoint_dir, f'checkpoint_epoch_{epoch}.pth')
         checkpoint['state_dict'] = model.state_dict()
         checkpoint['loss'] = running_total_loss / len(dataloader)
+        checkpoint['epoch'] = epoch
         torch.save(checkpoint, checkpoint_path)
