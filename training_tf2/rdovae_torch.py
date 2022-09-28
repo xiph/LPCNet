@@ -154,6 +154,40 @@ def random_split(start, stop, num_splits=3, min_len=3):
     return candidate
 
 
+
+# weight initialization and clipping
+def init_weights(module):
+    
+    if isinstance(module, nn.GRU):
+        for p in module.named_parameters():
+            if p[0].startswith('weight_hh_'):
+                nn.init.orthogonal_(p[1])
+
+    
+def weight_clip_factory(max_value):
+    """ weight clipping function concerning sum of abs values of adjecent weights """
+    def clip_weight_(w):
+        stop = w.size(1)
+        # omit last column if stop is odd
+        if stop % 2:
+            stop -= 1
+        max_values = max_value * torch.ones_like(w[:, :stop])
+        factor = max_value / torch.maximum(max_values,
+                                 torch.repeat_interleave(
+                                     torch.abs(w[:, :stop:2]) + torch.abs(w[:, 1:stop:2]),
+                                     2,
+                                     1))
+        with torch.no_grad():
+            w[:, :stop] *= factor
+    
+    def clip_weights(module):
+        if isinstance(module, nn.GRU) or isinstance(module, nn.Linear):
+            for name, w in module.named_parameters():
+                if name.startswith('weight'):
+                    clip_weight_(w)
+    
+    return clip_weights
+
 # RDOVAE module and submodules
 
 
@@ -199,11 +233,16 @@ class CoreEncoder(nn.Module):
         self.state_dense_1 = nn.Linear(self.cond_size, self.STATE_HIDDEN)
         self.state_dense_2 = nn.Linear(self.STATE_HIDDEN, self.state_size)
 
+        # initialize weights
+        self.apply(init_weights)
+
         # state buffers for inference
         self.register_buffer('gru_1_state', torch.zeros((1, 1, cond_size)))
         self.register_buffer('gru_2_state', torch.zeros((1, 1, cond_size)))
         self.register_buffer('gru_3_state', torch.zeros((1, 1, cond_size)))
         self.register_buffer('conv_state_buffer', torch.zeros((1, self.conv_input_channels, self.CONV_KERNEL_SIZE-1))) # fixme
+        
+
 
     def forward(self, features, q_id, rate_lambda):
         
@@ -251,7 +290,7 @@ class CoreDecoder(nn.Module):
 
     FRAMES_PER_STEP = 4
 
-    def __init__(self, input_dim, output_dim, statistical_model, cond_size, cond_size2, state_size=24):
+    def __init__(self, input_dim, output_dim, statistical_model, cond_size, cond_size2, state_size=24, state_mode='repeat'):
         """ core decoder for RDOVAE
         
             Computes features from latents, initial state, and quantization index
@@ -266,12 +305,17 @@ class CoreDecoder(nn.Module):
         self.cond_size  = cond_size
         self.cond_size2 = cond_size2
         self.state_size = state_size
+        self.state_mode = state_mode
 
         # shared statistical model
         self.statistical_model = statistical_model
 
         # derived parameters
-        self.input_size = self.input_dim + statistical_model.embedding_dim + self.state_size
+        if state_mode == 'repeat':
+            self.input_size = self.input_dim + statistical_model.embedding_dim + self.state_size
+        else:
+            self.input_size = self.input_dim + statistical_model.embedding_dim
+        
         self.concat_size = 4 * self.cond_size + 4 * self.cond_size2
 
         # layers
@@ -286,6 +330,14 @@ class CoreDecoder(nn.Module):
 
         self.output  = nn.Linear(self.concat_size, self.FRAMES_PER_STEP * self.output_dim)
 
+        if state_mode == 'gru_init':
+            self.gru_1_init = nn.Linear(self.state_size, self.cond_size)
+            self.gru_2_init = nn.Linear(self.state_size, self.cond_size)
+            self.gru_3_init = nn.Linear(self.state_size, self.cond_size)
+
+        # initialize weights
+        self.apply(init_weights)
+
     def forward(self, z, q_id, initial_state):
 
         batch_size = z.size(0)
@@ -297,18 +349,29 @@ class CoreDecoder(nn.Module):
         # reverse scaling
         x = z / statistical_model['quant_scale']
 
-        initial_state = torch.repeat_interleave(initial_state, x.size(1), 1)
-
-        x = torch.cat((x, statistical_model['quant_embedding'].detach(), initial_state), dim=-1)
+        if self.state_mode == 'repeat':
+            initial_state = torch.repeat_interleave(initial_state, x.size(1), 1)
+            x = torch.cat((x, statistical_model['quant_embedding'].detach(), initial_state), dim=-1)
+            
+            gru_1_state = torch.zeros((1, batch_size, self.cond_size)).to(device)
+            gru_2_state = torch.zeros((1, batch_size, self.cond_size)).to(device)
+            gru_3_state = torch.zeros((1, batch_size, self.cond_size)).to(device)
+            
+        elif self.state_mode == 'gru_init':
+            x = torch.cat((x, statistical_model['quant_embedding'].detach()), dim=-1)
+            
+            gru_1_state = torch.tanh(self.gru_1_init(initial_state).unsqueeze(0))
+            gru_2_state = torch.tanh(self.gru_2_init(initial_state).unsqueeze(0))
+            gru_3_state = torch.tanh(self.gru_3_init(initial_state).unsqueeze(0))
 
         # run decoding layer stack
         x1  = torch.tanh(self.dense_1(x))
         x2  = torch.tanh(self.dense_2(x1))
         x3  = torch.tanh(self.dense_3(x2))
 
-        x4, _ = self.gru_1(x3, torch.zeros((1, batch_size, self.cond_size)).to(device))
-        x5, _ = self.gru_2(x4, torch.zeros((1, batch_size, self.cond_size)).to(device))
-        x6, _ = self.gru_3(x5, torch.zeros((1, batch_size, self.cond_size)).to(device))
+        x4, _ = self.gru_1(x3, gru_1_state)
+        x5, _ = self.gru_2(x4, gru_2_state)
+        x6, _ = self.gru_3(x5, gru_3_state)
         
         x7  = torch.tanh(self.dense_4(x6))
         x8  = torch.tanh(self.dense_5(x7))
@@ -370,7 +433,7 @@ class StatisticalModel(nn.Module):
 
 
 class RDOVAE(nn.Module):
-    def __init__(self, feature_dim, latent_dim, quant_levels, cond_size, cond_size2, split_mode='split'):
+    def __init__(self, feature_dim, latent_dim, quant_levels, cond_size, cond_size2, state_dim=24, split_mode='split', clip_weights=True):
 
         super(RDOVAE, self).__init__()
 
@@ -380,6 +443,7 @@ class RDOVAE(nn.Module):
         self.cond_size    = cond_size
         self.cond_size2   = cond_size2
         self.split_mode   = split_mode
+        self.state_dim    = state_dim
         
         # submodules encoder and decoder share the statistical model
         self.statistical_model = StatisticalModel(quant_levels, latent_dim)
@@ -388,9 +452,18 @@ class RDOVAE(nn.Module):
         
         self.enc_stride = CoreEncoder.FRAMES_PER_STEP
         self.dec_stride = CoreDecoder.FRAMES_PER_STEP
+       
+        if clip_weights:
+            self.weight_clip_fn = weight_clip_factory(0.496)
+        else:
+            self.weight_clip_fn = None
         
         if self.dec_stride % self.enc_stride != 0:
             raise ValueError(f"get_decoder_chunks_generic: encoder stride does not divide decoder stride")
+    
+    def clip_weights(self):
+        if not type(self.weight_clip_fn) == type(None):
+            self.apply(self.weight_clip_fn)
             
     def get_decoder_chunks(self, z_frames, mode='split', chunks_per_offset = 4):
         
@@ -496,7 +569,7 @@ class RDOVAE(nn.Module):
         
         rate = hard_rate_estimate(z, stats['r_hard'], stats['theta_hard'], reduce=False)
         
-        state_size = m.log2(pvq_codebook_size(self.encoder.state_size, 30))
+        state_size = m.log2(pvq_codebook_size(self.state_dim, 30))
         
         return z, states, rate, state_size
 
@@ -536,5 +609,6 @@ if __name__ == "__main__" and debug:
     dec_features = cdec(z_reverse[:, ::2, :], q_ids_reverse[:, ::2], states_reverse[:, 0:1, :])
 
     rdovae = RDOVAE(20, 80, 40, 128, 256)
+    rdovae.clip_weights()
 
     model_output = rdovae(features, q_ids, rate_lambda)
