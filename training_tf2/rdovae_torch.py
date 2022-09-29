@@ -196,7 +196,7 @@ class CoreEncoder(nn.Module):
     FRAMES_PER_STEP = 2
     CONV_KERNEL_SIZE = 4
     
-    def __init__(self, feature_dim, output_dim, statistical_model, cond_size, cond_size2, state_size=24):
+    def __init__(self, feature_dim, output_dim, statistical_model, cond_size, cond_size2, state_size=24, state_method='from_gru'):
         """ core encoder for RDOVAE
         
             Computes latents, initial states, and rate estimates from features and lambda parameter
@@ -211,6 +211,7 @@ class CoreEncoder(nn.Module):
         self.cond_size          = cond_size
         self.cond_size2         = cond_size2
         self.state_size         = state_size
+        self.state_method       = state_method
 
         # shared statistical model
         self.statistical_model = statistical_model
@@ -230,7 +231,13 @@ class CoreEncoder(nn.Module):
         self.dense_5 = nn.Linear(self.cond_size, self.cond_size)
         self.conv1   = nn.Conv1d(self.conv_input_channels, self.output_dim, kernel_size=self.CONV_KERNEL_SIZE, padding='valid')
 
-        self.state_dense_1 = nn.Linear(self.cond_size, self.STATE_HIDDEN)
+        if self.state_method == 'from_gru':
+            self.state_dense_1 = nn.Linear(self.cond_size, self.STATE_HIDDEN)
+        elif self.state_method == 'from_concat':
+            self.state_dense_1 = nn.Linear(self.conv_input_channels, self.STATE_HIDDEN)
+        else:
+            raise ValueError(f"CoreEncoder.__init__: invalid state method {self.state_method}")
+        
         self.state_dense_2 = nn.Linear(self.STATE_HIDDEN, self.state_size)
 
         # initialize weights
@@ -270,16 +277,23 @@ class CoreEncoder(nn.Module):
 
         # concatenation of all hidden layer outputs
         x9 = torch.cat((x1, x2, x3, x4, x5, x6, x7, x8), dim=-1)
+        
+        # init state for decoder
+        if self.state_method == 'from_gru':
+            states = x6
+        elif self.state_method == 'from_concat':
+            states = x9
+        else:
+            raise ValueError(f"CoreEncoder.forward: invalid state method {self.state_method}")
+        
+        states = torch.tanh(self.state_dense_1(states))
+        states = torch.tanh(self.state_dense_2(states))
 
-        # pad for causal use
+        # latent representation via convolution
         x9 = F.pad(x9.permute(0, 2, 1), [self.CONV_KERNEL_SIZE - 1, 0])
         z = self.conv1(x9).permute(0, 2, 1)
         z = z * statistical_model['quant_scale']
 
-        # initial states for decoding
-        states = x6
-        states = torch.tanh(self.state_dense_1(states))
-        states = torch.tanh(self.state_dense_2(states))
 
         return z, states
 
@@ -347,7 +361,7 @@ class CoreDecoder(nn.Module):
         statistical_model = self.statistical_model(q_id)
 
         # reverse scaling
-        x = z / statistical_model['quant_scale']
+        x = z / statistical_model['quant_scale'].detach()
 
         if self.state_method == 'repeat':
             initial_state = torch.repeat_interleave(initial_state, x.size(1), 1)
@@ -433,7 +447,17 @@ class StatisticalModel(nn.Module):
 
 
 class RDOVAE(nn.Module):
-    def __init__(self, feature_dim, latent_dim, quant_levels, cond_size, cond_size2, state_dim=24, split_mode='split', clip_weights=True, dec_state_method='repeat'):
+    def __init__(self,
+                 feature_dim,
+                 latent_dim,
+                 quant_levels,
+                 cond_size,
+                 cond_size2,
+                 state_dim=24,
+                 split_mode='split',
+                 clip_weights=True,
+                 dec_state_method='repeat',
+                 enc_state_method='from_gru'):
 
         super(RDOVAE, self).__init__()
 
