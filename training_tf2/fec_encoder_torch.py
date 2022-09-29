@@ -132,9 +132,9 @@ with torch.no_grad():
 
     for i in range(offset, num_frames):
         print(f"processing frame {i - offset}...")
-        features = model.decode(z[:, i - 2 * input_length + 1 : i + 1 : 2, :], quant_id[:, i - 2 * input_length + 1 : i + 1 : 2], states[:, i : i + 1, :])
+        features = model.decode(z[:, i - 2 * input_length + 2: i + 1 : 2, :], quant_id[:, i - 2 * input_length + 2: i + 1 : 2], states[:, i : i + 1, :])
         packets.append(features.numpy())
-        packet_size = 8 * int((torch.sum(rates[:, i - 2 * input_length + 1 : i + 1 : 2]) + 7 + state_size) / 8)
+        packet_size = 8 * int((torch.sum(rates[:, i - 2 * input_length + 2: i + 1 : 2]) + 7 + state_size) / 8)
         packet_sizes.append(packet_size)
 
 
@@ -151,6 +151,7 @@ if args.debug_output:
 
     batches = [2, 4]
     offsets = [0, 4, 20]
+        
     # sanity checks
     # 1. concatenate features at offset 0
     for batch, offset in itertools.product(batches, offsets):
