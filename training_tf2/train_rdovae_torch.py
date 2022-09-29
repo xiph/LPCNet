@@ -25,6 +25,7 @@ model_group.add_argument('--quant-levels', type=int, help="number of quantizatio
 model_group.add_argument('--lambda-min', type=float, help="minimal value for rate lambda, default: 7e-4", default=7e-4)
 model_group.add_argument('--lambda-max', type=float, help="maximal value for rate lambda, default: 2e-3", default=2e-3)
 model_group.add_argument('--decoder-state-method', choices=["repeat", "gru_init"],  help="specifies how the decoder uses the transfered state, default: repeat", default='repeat')
+model_group.add_argument('--encoder-state-method', choices=["from_gru", "from_concat"],  help="specifies how the encoder produces the transfered state, default: from_gru", default='from_gru')
 
 training_group = parser.add_argument_group(title="training parameters")
 training_group.add_argument('--batch-size', type=int, help="batch size, default: 32", default=32)
@@ -54,7 +55,7 @@ lr_decay_factor = args.lr_decay_factor
 split_mode = args.split_mode
 # not exposed
 adam_betas = [0.9, 0.99]
-adam_eps = 1e-7
+adam_eps = 1e-8
 
 checkpoint['batch_size'] = batch_size
 checkpoint['lr'] = lr
@@ -79,6 +80,7 @@ lambda_min = args.lambda_min
 lambda_max = args.lambda_max
 state_dim = args.state_dim
 decoder_state_method = args.decoder_state_method
+encoder_state_method = args.encoder_state_method
 # not expsed
 num_features = 20
 
@@ -88,7 +90,7 @@ feature_file = args.features
 
 # model
 checkpoint['model_args']    = (num_features, latent_dim, quant_levels, cond_size, cond_size2)
-checkpoint['model_kwargs']  = {'state_dim': state_dim, 'split_mode' : split_mode, 'dec_state_method' : decoder_state_method}
+checkpoint['model_kwargs']  = {'state_dim': state_dim, 'split_mode' : split_mode, 'dec_state_method' : decoder_state_method, 'enc_state_method' : encoder_state_method}
 model = RDOVAE(*checkpoint['model_args'], **checkpoint['model_kwargs'])
 
 
@@ -126,6 +128,8 @@ if __name__ == '__main__':
         running_rate_loss       = 0
         running_soft_dist_loss  = 0
         running_hard_dist_loss  = 0
+        running_hard_rate_loss  = 0
+        running_soft_rate_loss  = 0
         running_total_loss      = 0
         running_rate_metric     = 0
         previous_total_loss     = 0
@@ -154,7 +158,9 @@ if __name__ == '__main__':
                 # rate loss
                 hard_rate = hard_rate_estimate(z, statistical_model['r_hard'], statistical_model['theta_hard'], reduce=False)
                 soft_rate = soft_rate_estimate(z, statistical_model['r_soft'], reduce=False)
-                rate_loss = torch.mean(rate_lambda.squeeze(-1) * (0.1 * hard_rate + soft_rate))
+                soft_rate_loss = torch.mean(rate_lambda.squeeze(-1) * soft_rate)
+                hard_rate_loss = torch.mean(rate_lambda.squeeze(-1) * hard_rate)
+                rate_loss = (soft_rate_loss + 0.1 * hard_rate_loss)
                 hard_rate_metric = torch.mean(hard_rate)
 
                 ## distortion losses
@@ -195,6 +201,8 @@ if __name__ == '__main__':
                 running_rate_metric     += float(hard_rate_metric.detach().cpu())
                 running_total_loss      += float(total_loss.detach().cpu())
                 running_first_frame_loss += float(first_frame_loss.detach().cpu())
+                running_soft_rate_loss += float(soft_rate_loss.detach().cpu())
+                running_hard_rate_loss += float(hard_rate_loss.detach().cpu())
 
                 if (i + 1) % log_interval == 0:
                     current_loss = (running_total_loss - previous_total_loss) / log_interval
@@ -205,7 +213,9 @@ if __name__ == '__main__':
                         dist_sq=running_soft_dist_loss / (i + 1),
                         rate_loss=running_rate_loss / (i + 1),
                         rate=running_rate_metric / (i + 1),
-                        ffloss=running_first_frame_loss / (i + 1)
+                        ffloss=running_first_frame_loss / (i + 1),
+                        rateloss_hard=running_hard_rate_loss / (i + 1),
+                        rateloss_soft=running_soft_rate_loss / (i + 1)
                     )
                     previous_total_loss = running_total_loss
 
