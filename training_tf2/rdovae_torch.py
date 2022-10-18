@@ -67,7 +67,7 @@ def pvq_codebook_size(n, k):
         return 1
     
     if n == 0:
-        return 1
+        return 0
     
     return pvq_codebook_size(n - 1, k) + pvq_codebook_size(n, k - 1) + pvq_codebook_size(n - 1, k - 1)
 
