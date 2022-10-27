@@ -24,8 +24,6 @@ model_group.add_argument('--state-dim', type=int, help="dimensionality of transf
 model_group.add_argument('--quant-levels', type=int, help="number of quantization levels, default: 40", default=40)
 model_group.add_argument('--lambda-min', type=float, help="minimal value for rate lambda, default: 7e-4", default=7e-4)
 model_group.add_argument('--lambda-max', type=float, help="maximal value for rate lambda, default: 2e-3", default=2e-3)
-model_group.add_argument('--decoder-state-method', choices=["repeat", "gru_init"],  help="specifies how the decoder uses the transfered state, default: repeat", default='repeat')
-model_group.add_argument('--encoder-state-method', choices=["from_gru", "from_concat"],  help="specifies how the encoder produces the transfered state, default: from_gru", default='from_gru')
 
 training_group = parser.add_argument_group(title="training parameters")
 training_group.add_argument('--batch-size', type=int, help="batch size, default: 32", default=32)
@@ -79,8 +77,6 @@ quant_levels = args.quant_levels
 lambda_min = args.lambda_min
 lambda_max = args.lambda_max
 state_dim = args.state_dim
-decoder_state_method = args.decoder_state_method
-encoder_state_method = args.encoder_state_method
 # not expsed
 num_features = 20
 
@@ -90,7 +86,7 @@ feature_file = args.features
 
 # model
 checkpoint['model_args']    = (num_features, latent_dim, quant_levels, cond_size, cond_size2)
-checkpoint['model_kwargs']  = {'state_dim': state_dim, 'split_mode' : split_mode, 'dec_state_method' : decoder_state_method, 'enc_state_method' : encoder_state_method}
+checkpoint['model_kwargs']  = {'state_dim': state_dim, 'split_mode' : split_mode}
 model = RDOVAE(*checkpoint['model_args'], **checkpoint['model_kwargs'])
 
 

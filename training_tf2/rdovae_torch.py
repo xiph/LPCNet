@@ -196,7 +196,7 @@ class CoreEncoder(nn.Module):
     FRAMES_PER_STEP = 2
     CONV_KERNEL_SIZE = 4
     
-    def __init__(self, feature_dim, output_dim, statistical_model, cond_size, cond_size2, state_size=24, state_method='from_gru'):
+    def __init__(self, feature_dim, output_dim, cond_size, cond_size2, state_size=24):
         """ core encoder for RDOVAE
         
             Computes latents, initial states, and rate estimates from features and lambda parameter
@@ -211,13 +211,9 @@ class CoreEncoder(nn.Module):
         self.cond_size          = cond_size
         self.cond_size2         = cond_size2
         self.state_size         = state_size
-        self.state_method       = state_method
-
-        # shared statistical model
-        self.statistical_model = statistical_model
 
         # derived parameters
-        self.input_dim = self.FRAMES_PER_STEP * self.feature_dim + self.statistical_model.embedding_dim + 1
+        self.input_dim = self.FRAMES_PER_STEP * self.feature_dim
         self.conv_input_channels =  5 * cond_size + 3 * cond_size2
 
         # layers
@@ -231,13 +227,8 @@ class CoreEncoder(nn.Module):
         self.dense_5 = nn.Linear(self.cond_size, self.cond_size)
         self.conv1   = nn.Conv1d(self.conv_input_channels, self.output_dim, kernel_size=self.CONV_KERNEL_SIZE, padding='valid')
 
-        if self.state_method == 'from_gru':
-            self.state_dense_1 = nn.Linear(self.cond_size, self.STATE_HIDDEN)
-        elif self.state_method == 'from_concat':
-            self.state_dense_1 = nn.Linear(self.conv_input_channels, self.STATE_HIDDEN)
-        else:
-            raise ValueError(f"CoreEncoder.__init__: invalid state method {self.state_method}")
-        
+        self.state_dense_1 = nn.Linear(self.conv_input_channels, self.STATE_HIDDEN)
+
         self.state_dense_2 = nn.Linear(self.STATE_HIDDEN, self.state_size)
 
         # initialize weights
@@ -251,16 +242,10 @@ class CoreEncoder(nn.Module):
         
 
 
-    def forward(self, features, q_id, rate_lambda):
-        
-        # get statistical model
-        statistical_model = self.statistical_model(q_id)
+    def forward(self, features):
 
         # reshape features
         x = torch.reshape(features, (features.size(0), features.size(1) // self.FRAMES_PER_STEP, self.FRAMES_PER_STEP * features.size(2)))
-
-        # prepare input
-        x = torch.cat((x, statistical_model['quant_embedding'].detach(), rate_lambda), dim=-1)
 
         batch = x.size(0)
         device = x.device
@@ -279,21 +264,12 @@ class CoreEncoder(nn.Module):
         x9 = torch.cat((x1, x2, x3, x4, x5, x6, x7, x8), dim=-1)
         
         # init state for decoder
-        if self.state_method == 'from_gru':
-            states = x6
-        elif self.state_method == 'from_concat':
-            states = x9
-        else:
-            raise ValueError(f"CoreEncoder.forward: invalid state method {self.state_method}")
-        
-        states = torch.tanh(self.state_dense_1(states))
+        states = torch.tanh(self.state_dense_1(x9))
         states = torch.tanh(self.state_dense_2(states))
 
         # latent representation via convolution
         x9 = F.pad(x9.permute(0, 2, 1), [self.CONV_KERNEL_SIZE - 1, 0])
         z = self.conv1(x9).permute(0, 2, 1)
-        z = z * statistical_model['quant_scale']
-
 
         return z, states
 
@@ -304,7 +280,7 @@ class CoreDecoder(nn.Module):
 
     FRAMES_PER_STEP = 4
 
-    def __init__(self, input_dim, output_dim, statistical_model, cond_size, cond_size2, state_size=24, state_method='repeat'):
+    def __init__(self, input_dim, output_dim, cond_size, cond_size2, state_size=24):
         """ core decoder for RDOVAE
         
             Computes features from latents, initial state, and quantization index
@@ -319,35 +295,27 @@ class CoreDecoder(nn.Module):
         self.cond_size  = cond_size
         self.cond_size2 = cond_size2
         self.state_size = state_size
-        self.state_method = state_method
 
-        # shared statistical model
-        self.statistical_model = statistical_model
-
-        # derived parameters
-        if state_method == 'repeat':
-            self.input_size = self.input_dim + statistical_model.embedding_dim + self.state_size
-        else:
-            self.input_size = self.input_dim + statistical_model.embedding_dim
+        self.input_size = self.input_dim
         
         self.concat_size = 4 * self.cond_size + 4 * self.cond_size2
 
         # layers
         self.dense_1    = nn.Linear(self.input_size, cond_size2)
-        self.dense_2    = nn.Linear(cond_size2, cond_size)
-        self.dense_3    = nn.Linear(cond_size, cond_size2)
         self.gru_1      = nn.GRU(cond_size2, cond_size, batch_first=True)
-        self.gru_2      = nn.GRU(cond_size, cond_size, batch_first=True)
-        self.gru_3      = nn.GRU(cond_size, cond_size, batch_first=True)
+        self.dense_2    = nn.Linear(cond_size, cond_size2)
+        self.gru_2      = nn.GRU(cond_size2, cond_size, batch_first=True)
+        self.dense_3    = nn.Linear(cond_size, cond_size2)
+        self.gru_3      = nn.GRU(cond_size2, cond_size, batch_first=True)
         self.dense_4    = nn.Linear(cond_size, cond_size2)
         self.dense_5    = nn.Linear(cond_size2, cond_size2)
 
         self.output  = nn.Linear(self.concat_size, self.FRAMES_PER_STEP * self.output_dim)
 
-        if state_method == 'gru_init':
-            self.gru_1_init = nn.Linear(self.state_size, self.cond_size)
-            self.gru_2_init = nn.Linear(self.state_size, self.cond_size)
-            self.gru_3_init = nn.Linear(self.state_size, self.cond_size)
+
+        self.gru_1_init = nn.Linear(self.state_size, self.cond_size)
+        self.gru_2_init = nn.Linear(self.state_size, self.cond_size)
+        self.gru_3_init = nn.Linear(self.state_size, self.cond_size)
 
         # initialize weights
         self.apply(init_weights)
@@ -356,41 +324,21 @@ class CoreDecoder(nn.Module):
 
         batch_size = z.size(0)
         device = z.device
-
-        # get statistical model
-        statistical_model = self.statistical_model(q_id)
-
-        # reverse scaling
-        x = z / statistical_model['quant_scale'].detach()
-
-        if self.state_method == 'repeat':
-            initial_state = torch.repeat_interleave(initial_state, x.size(1), 1)
-            x = torch.cat((x, statistical_model['quant_embedding'].detach(), initial_state), dim=-1)
-            
-            gru_1_state = torch.zeros((1, batch_size, self.cond_size)).to(device)
-            gru_2_state = torch.zeros((1, batch_size, self.cond_size)).to(device)
-            gru_3_state = torch.zeros((1, batch_size, self.cond_size)).to(device)
-            
-        elif self.state_method == 'gru_init':
-            x = torch.cat((x, statistical_model['quant_embedding'].detach()), dim=-1)
-            
-            gru_1_state = torch.tanh(self.gru_1_init(initial_state).permute(1, 0, 2))
-            gru_2_state = torch.tanh(self.gru_2_init(initial_state).permute(1, 0, 2))
-            gru_3_state = torch.tanh(self.gru_3_init(initial_state).permute(1, 0, 2))
+        
+        gru_1_state = torch.tanh(self.gru_1_init(initial_state).permute(1, 0, 2))
+        gru_2_state = torch.tanh(self.gru_2_init(initial_state).permute(1, 0, 2))
+        gru_3_state = torch.tanh(self.gru_3_init(initial_state).permute(1, 0, 2))
 
         # run decoding layer stack
-        x1  = torch.tanh(self.dense_1(x))
-        x2  = torch.tanh(self.dense_2(x1))
-        x3  = torch.tanh(self.dense_3(x2))
-
-        x4, _ = self.gru_1(x3, gru_1_state)
-        x5, _ = self.gru_2(x4, gru_2_state)
+        x1  = torch.tanh(self.dense_1(z))
+        x2, _ = self.gru_1(x1, gru_1_state)
+        x3  = torch.tanh(self.dense_2(x1))
+        x4, _ = self.gru_2(x3, gru_2_state)
+        x5  = torch.tanh(self.dense_3(x4))
         x6, _ = self.gru_3(x5, gru_3_state)
-        
         x7  = torch.tanh(self.dense_4(x6))
         x8  = torch.tanh(self.dense_5(x7))
         x9 = torch.cat((x1, x2, x3, x4, x5, x6, x7, x8), dim=-1)
-
 
         # output layer and reshaping
         x10 = self.output(x9)
@@ -455,9 +403,7 @@ class RDOVAE(nn.Module):
                  cond_size2,
                  state_dim=24,
                  split_mode='split',
-                 clip_weights=True,
-                 dec_state_method='repeat',
-                 enc_state_method='from_gru'):
+                 clip_weights=True):
 
         super(RDOVAE, self).__init__()
 
@@ -471,8 +417,8 @@ class RDOVAE(nn.Module):
         
         # submodules encoder and decoder share the statistical model
         self.statistical_model = StatisticalModel(quant_levels, latent_dim)
-        self.core_encoder = nn.DataParallel(CoreEncoder(feature_dim, latent_dim, self.statistical_model, cond_size, cond_size2, state_size=state_dim))
-        self.core_decoder = nn.DataParallel(CoreDecoder(latent_dim, feature_dim, self.statistical_model, cond_size, cond_size2, state_size=state_dim, state_method=dec_state_method))
+        self.core_encoder = nn.DataParallel(CoreEncoder(feature_dim, latent_dim, cond_size, cond_size2, state_size=state_dim))
+        self.core_decoder = nn.DataParallel(CoreDecoder(latent_dim, feature_dim, cond_size, cond_size2, state_size=state_dim))
         
         self.enc_stride = CoreEncoder.FRAMES_PER_STEP
         self.dec_stride = CoreDecoder.FRAMES_PER_STEP
@@ -544,14 +490,15 @@ class RDOVAE(nn.Module):
         statistical_model = self.statistical_model(q_id)
 
         # run encoder
-        z, states = self.core_encoder(features, q_id, rate_lambda)
+        z, states = self.core_encoder(features)
 
-        # apply soft dead zone
+        # scaling, dead-zone and quantization
+        z = z * statistical_model['quant_scale']
         z = soft_dead_zone(z, statistical_model['dead_zone'])
 
         # quantization
-        z_q = hard_quantize(z)
-        z_n = noise_quantize(z)
+        z_q = hard_quantize(z) / statistical_model['quant_scale']
+        z_n = noise_quantize(z) / statistical_model['quant_scale']
         states_q = soft_pvq(states, 30)
 
         # decoder
@@ -589,7 +536,7 @@ class RDOVAE(nn.Module):
         # dead-zone and quantization
         z = soft_dead_zone(z, stats['dead_zone'])
         z = torch.round(z)
-        states = soft_pvq(states, 30)
+        states = soft_pvq(states, 82)
         
         rate = hard_rate_estimate(z, stats['r_hard'], stats['theta_hard'], reduce=False)
         
