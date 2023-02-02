@@ -39,8 +39,8 @@ class CELPNetDataset(torch.utils.data.Dataset):
         return self.nb_sequences
 
     def __getitem__(self, index):
-        features = self.features[index, :, :]
-        data = self.data[index, :]
-        periods = self.periods[index, :, :];
+        features = self.features[index, :, :].copy()
+        data = self.data[index, :].copy().astype(np.float32) / 2**15
+        periods = self.periods[index, :, :].copy()
 
         return features, periods, data
