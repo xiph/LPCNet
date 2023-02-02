@@ -15,7 +15,7 @@ batch_size = 512
 features_file = 'features56.f32'
 signal_file = 'data56.s16'
 
-device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
 
 model = celpnet.CELPNet()
 #model = nn.DataParallel(model)

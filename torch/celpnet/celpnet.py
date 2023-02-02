@@ -52,14 +52,14 @@ class CELPNetSub(nn.Module):
 
         self.apply(init_weights)
 
-    def forward(self, cond, prev):
+    def forward(self, cond, prev, states):
         tmp = torch.cat((cond, prev), 1)
         tmp = torch.tanh(self.sig_dense1(tmp))
         tmp = torch.tanh(self.sig_dense2(tmp))
-        self.gru1_state = self.gru1(tmp, self.gru1_state)
-        self.gru2_state = self.gru2(self.gru1_state, self.gru2_state)
-        self.gru3_state = self.gru3(self.gru2_state, self.gru3_state)
-        return torch.tanh(self.sig_dense_out(self.gru3_state))
+        gru1_state = self.gru1(tmp, states[0])
+        gru2_state = self.gru2(gru1_state, states[1])
+        gru3_state = self.gru3(gru2_state, states[2])
+        return torch.tanh(self.sig_dense_out(gru3_state)), (gru1_state, gru2_state, gru3_state)
 
 class CELPNet(nn.Module):
     def __init__(self, subframe_size=40, nb_subframes=4, feature_dim=20, cond_size=256, stateful=False):
@@ -78,24 +78,26 @@ class CELPNet(nn.Module):
     def forward(self, features, pre, nb_frames):
         device = features.device
         batch_size = features.size(0)
-        if not self.stateful or batch_size != self.sig_net.gru1_state.size(0):
-            self.sig_net.gru1_state = torch.zeros(batch_size, self.cond_size).to(device)
-            self.sig_net.gru2_state = torch.zeros(batch_size, self.cond_size).to(device)
-            self.sig_net.gru3_state = torch.zeros(batch_size, self.cond_size).to(device)
+
+        states = (
+            torch.zeros(batch_size, self.cond_size).to(device),
+            torch.zeros(batch_size, self.cond_size).to(device),
+            torch.zeros(batch_size, self.cond_size).to(device)
+        )
 
         sig = torch.zeros((batch_size, 0)).to(device)
         cond = self.cond_net(features)
-        nb_pre_frames = pre.size(0)//self.frame_size
+        nb_pre_frames = pre.size(1)//self.frame_size
         for n in range(nb_pre_frames):
             for k in range(self.nb_subframes):
                 pos = n*self.frame_size + k*self.subframe_size
                 if pos > 0:
-                    self.sig_net(cond[:, n, :], pre[:, pos-self.subframe_size:pos])
+                    _, states = self.sig_net(cond[:, n, :], pre[:, pos-self.subframe_size:pos], states)
         prev = pre[:, -self.subframe_size:]
         for n in range(nb_frames):
             for k in range(self.nb_subframes):
                 pos = n*self.frame_size + k*self.subframe_size
-                out = self.sig_net(cond[:, nb_pre_frames+n, :], prev)
+                out, states = self.sig_net(cond[:, nb_pre_frames+n, :], prev, states)
                 sig = torch.cat([sig, out], 1)
                 prev = out
         return sig
