@@ -47,6 +47,7 @@ model.load_state_dict(checkpoint['state_dict'], strict=False)
 
 features = np.reshape(np.memmap(features_file, dtype='float32', mode='r'), (1, -1, nb_features))
 features = features[:, :, :nb_used_features]
+periods = np.round(50*features[:,:,nb_used_features-2]+100).astype('int')
 
 nb_frames = features.shape[1]
 #nb_frames = 1000
@@ -54,8 +55,9 @@ nb_frames = features.shape[1]
 if __name__ == '__main__':
     model.to(device)
     features = torch.tensor(features).to(device)
+    periods = torch.tensor(periods).to(device)
     
-    sig = model(features, None, nb_frames - 4)
+    sig = model(features, periods, None, nb_frames - 4)
 
     pcm = np.round(32768*sig.detach().numpy()).astype('int16')
     pcm.tofile(signal_file)

@@ -15,6 +15,7 @@ parser.add_argument('features', type=str, help='path to feature file in .f32 for
 parser.add_argument('signal', type=str, help='path to signal file in .s16 format')
 parser.add_argument('output', type=str, help='path to output folder')
 
+parser.add_argument('--suffix', type=str, help="model name suffix", default="")
 parser.add_argument('--cuda-visible-devices', type=str, help="comma separates list of cuda visible device indices, default: CUDA_VISIBLE_DEVICES", default=None)
 
 
@@ -81,7 +82,7 @@ if type(args.initial_checkpoint) != type(None):
 checkpoint['state_dict']    = model.state_dict()
 
 
-dataset = CELPNetDataset(features_file, signal_file)
+dataset = CELPNetDataset(features_file, signal_file, sequence_length=sequence_length)
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=4)
 
 
@@ -91,14 +92,21 @@ optimizer = torch.optim.Adam(model.parameters(), lr=lr, betas=adam_betas, eps=ad
 # learning rate scheduler
 scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer=optimizer, lr_lambda=lambda x : 1 / (1 + lr_decay * x))
 
-spec = celpnet.new_specgram(320, device)
+spec1 = celpnet.new_specgram(320, 0.5, device)
+spec2 = celpnet.new_specgram(320, 0, device)
+spec1b = celpnet.new_specgram(640, 0.5, device)
+spec2b = celpnet.new_specgram(640, 0, device)
 
 if __name__ == '__main__':
     model.to(device)
 
     for epoch in range(1, epochs + 1):
 
-        running_l1_loss = 0
+        running_loss1 = 0
+        running_loss2 = 0
+        running_loss1b = 0
+        running_loss2b = 0
+        running_loss = 0
 
         print(f"training epoch {epoch}...")
         with tqdm.tqdm(dataloader, unit='batch') as tepoch:
@@ -108,11 +116,15 @@ if __name__ == '__main__':
                 periods = periods.to(device)
                 signal = signal.to(device)
                 pre = signal[:, :3*160]
-                sig = model(features, pre, signal.size(1)//160 - 3)
+                sig = model(features, periods, pre, signal.size(1)//160 - 3)
                 sig = torch.cat([pre, sig], -1)
 
                 #loss = celpnet.sig_l1(signal, sig)
-                loss = celpnet.spec_l1(spec, signal, sig)
+                loss1 = celpnet.spec_l1(spec1, signal, sig)
+                loss2 = celpnet.spec_l1(spec2, signal, sig)
+                loss1b = celpnet.spec_l1(spec1b, signal, sig)
+                loss2b = celpnet.spec_l1(spec2b, signal, sig)
+                loss = 5*loss1 + loss2 + 5*loss1b + loss2b
 
                 loss.backward()
                 optimizer.step()
@@ -121,12 +133,22 @@ if __name__ == '__main__':
                 
                 scheduler.step()
 
-                running_l1_loss += loss.detach().cpu().item()
-                tepoch.set_postfix(running_l1_loss=f"{running_l1_loss/(i+1):8.5f}")
+                running_loss1 += loss1.detach().cpu().item()
+                running_loss2 += loss2.detach().cpu().item()
+                running_loss1b += loss1b.detach().cpu().item()
+                running_loss2b += loss2b.detach().cpu().item()
+
+                running_loss += loss.detach().cpu().item()
+                tepoch.set_postfix(loss=f"{running_loss/(i+1):8.5f}",
+                                   loss1=f"{running_loss1/(i+1):8.5f}",
+                                   loss2=f"{running_loss2/(i+1):8.5f}",
+                                   loss1b=f"{running_loss1b/(i+1):8.5f}",
+                                   loss2b=f"{running_loss2b/(i+1):8.5f}",
+                                   )
 
         # save checkpoint
-        checkpoint_path = os.path.join(checkpoint_dir, f'checkpoint_epoch_{epoch}.pth')
+        checkpoint_path = os.path.join(checkpoint_dir, f'celpnet{args.suffix}_{epoch}.pth')
         checkpoint['state_dict'] = model.state_dict()
-        checkpoint['loss'] = running_l1_loss / len(dataloader)
+        checkpoint['loss'] = running_loss / len(dataloader)
         checkpoint['epoch'] = epoch
         torch.save(checkpoint, checkpoint_path)

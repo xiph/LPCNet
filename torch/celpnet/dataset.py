@@ -31,7 +31,7 @@ class CELPNetDataset(torch.utils.data.Dataset):
         sizeof = self.features.strides[-1]
         self.features = np.lib.stride_tricks.as_strided(self.features, shape=(self.nb_sequences, self.sequence_length+4, nb_features),
                                            strides=(self.sequence_length*self.nb_features*sizeof, self.nb_features*sizeof, sizeof))
-        self.periods = (.1 + 50*self.features[:,:,self.nb_used_features-2:self.nb_used_features-1]+100).astype('int16')
+        self.periods = np.round(50*self.features[:,:,self.nb_used_features-2]+100).astype('int')
 
         self.features = self.features[:, :, :self.nb_used_features]
 
@@ -41,6 +41,6 @@ class CELPNetDataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         features = self.features[index, :, :].copy()
         data = self.data[index, :].copy().astype(np.float32) / 2**15
-        periods = self.periods[index, :, :].copy()
+        periods = self.periods[index, :].copy()
 
         return features, periods, data

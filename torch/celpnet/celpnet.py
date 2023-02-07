@@ -3,13 +3,16 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-def new_specgram(N, device):
+def new_specgram(N, alpha, device):
     x = np.arange(N, dtype='float32')
     w = np.sin(.5*np.pi*np.sin((x+.5)/N*np.pi)**2)
     w = torch.tensor(x).to(device)
     def compute_specgram(x):
-        X = torch.stft(x, N, hop_length=N//2, return_complex=True, center=False, window=w)
-        return 20*torch.log10(1e-5+torch.abs(X))
+        X = torch.stft(x, N, hop_length=N//4, return_complex=True, center=False, window=w)
+        if alpha == 0:
+            return 20*torch.log10(1e-5+torch.abs(X))
+        else:
+            return (1./alpha)*(1e-5+torch.abs(X))**alpha
 
     return compute_specgram
 
@@ -27,20 +30,23 @@ def init_weights(module):
                 nn.init.orthogonal_(p[1])
 
 class CELPNetCond(nn.Module):
-    def __init__(self, feature_dim=20, cond_size=256):
+    def __init__(self, feature_dim=20, cond_size=256, pembed_dims=64):
         super(CELPNetCond, self).__init__()
 
         self.feature_dim = feature_dim
         self.cond_size = cond_size
 
-        self.fdense1 = nn.Linear(self.feature_dim, self.cond_size)
+        self.pembed = nn.Embedding(256, pembed_dims)
+        self.fdense1 = nn.Linear(self.feature_dim + pembed_dims, self.cond_size)
         self.fconv1 = nn.Conv1d(self.cond_size, self.cond_size, kernel_size=3, padding='valid')
         self.fconv2 = nn.Conv1d(self.cond_size, self.cond_size, kernel_size=3, padding='valid')
         self.fdense2 = nn.Linear(self.cond_size, self.cond_size)
 
         self.apply(init_weights)
 
-    def forward(self, features):
+    def forward(self, features, period):
+        p = self.pembed(period)
+        features = torch.cat((features, p), -1)
         tmp = torch.tanh(self.fdense1(features))
         tmp = tmp.permute(0, 2, 1)
         tmp = torch.tanh(self.fconv1(tmp))
@@ -89,7 +95,7 @@ class CELPNet(nn.Module):
         self.cond_net = CELPNetCond(feature_dim=feature_dim, cond_size=cond_size)
         self.sig_net = CELPNetSub(subframe_size=subframe_size, nb_subframes=nb_subframes, cond_size=cond_size)
 
-    def forward(self, features, pre, nb_frames):
+    def forward(self, features, period, pre, nb_frames):
         device = features.device
         batch_size = features.size(0)
 
@@ -100,7 +106,7 @@ class CELPNet(nn.Module):
         )
 
         sig = torch.zeros((batch_size, 0)).to(device)
-        cond = self.cond_net(features)
+        cond = self.cond_net(features, period)
         if pre is None:
             nb_pre_frames = 0
             prev = torch.zeros(batch_size, self.subframe_size).to(device)
