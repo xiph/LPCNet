@@ -69,34 +69,51 @@ class CELPNetCond(nn.Module):
         return tmp
 
 class CELPNetSub(nn.Module):
-    def __init__(self, subframe_size=40, nb_subframes=4, cond_size=256):
+    def __init__(self, subframe_size=40, nb_subframes=4, cond_size=256, has_gain=False):
         super(CELPNetSub, self).__init__()
 
         self.subframe_size = subframe_size
         self.nb_subframes = nb_subframes
         self.cond_size = cond_size
+        self.has_gain = has_gain
+        
+        print("has_gain:", self.has_gain)
+        
+        gain_param = 1 if self.has_gain else 0
 
-        self.sig_dense1 = nn.Linear(3*self.subframe_size+self.cond_size, self.cond_size)
+        self.sig_dense1 = nn.Linear(3*self.subframe_size+self.cond_size+gain_param, self.cond_size)
         self.sig_dense2 = nn.Linear(self.cond_size, self.cond_size)
         self.gru1 = nn.GRUCell(self.cond_size, self.cond_size)
         self.gru2 = nn.GRUCell(self.cond_size, self.cond_size)
         self.gru3 = nn.GRUCell(self.cond_size, self.cond_size)
         self.sig_dense_out = nn.Linear(self.cond_size, self.subframe_size)
+        if self.has_gain:
+            self.gain_dense_out = nn.Linear(self.cond_size, 1)
+
 
         self.apply(init_weights)
 
-    def forward(self, cond, prev, states):
+    def forward(self, cond, prev, phase, states):
         #print(cond.shape, prev.shape)
-        tmp = torch.cat((cond, prev), 1)
+        if self.has_gain:
+            gain = torch.norm(prev, dim=1, p=2, keepdim=True)
+            prev = prev/(1e-5+gain)
+            prev = torch.cat([prev, torch.log(1e-5+gain)], 1)
+        
+        tmp = torch.cat((cond, prev, phase), 1)
         tmp = torch.tanh(self.sig_dense1(tmp))
         tmp = torch.tanh(self.sig_dense2(tmp))
         gru1_state = self.gru1(tmp, states[0])
         gru2_state = self.gru2(gru1_state, states[1])
         gru3_state = self.gru3(gru2_state, states[2])
-        return torch.tanh(self.sig_dense_out(gru3_state)), (gru1_state, gru2_state, gru3_state)
+        sig_out = torch.tanh(self.sig_dense_out(gru3_state))
+        if self.has_gain:
+            out_gain = torch.exp(self.gain_dense_out(gru3_state))
+            sig_out = sig_out * out_gain
+        return sig_out, (gru1_state, gru2_state, gru3_state)
 
 class CELPNet(nn.Module):
-    def __init__(self, subframe_size=40, nb_subframes=4, feature_dim=20, cond_size=256, stateful=False):
+    def __init__(self, subframe_size=40, nb_subframes=4, feature_dim=20, cond_size=256, stateful=False, has_gain=False):
         super(CELPNet, self).__init__()
 
         self.subframe_size = subframe_size
@@ -105,9 +122,10 @@ class CELPNet(nn.Module):
         self.feature_dim = feature_dim
         self.cond_size = cond_size
         self.stateful = stateful
+        self.has_gain = has_gain
 
         self.cond_net = CELPNetCond(feature_dim=feature_dim, cond_size=cond_size)
-        self.sig_net = CELPNetSub(subframe_size=subframe_size, nb_subframes=nb_subframes, cond_size=cond_size)
+        self.sig_net = CELPNetSub(subframe_size=subframe_size, nb_subframes=nb_subframes, cond_size=cond_size, has_gain=has_gain)
 
     def forward(self, features, period, nb_frames, pre=None, states=None):
         device = features.device
@@ -137,17 +155,17 @@ class CELPNet(nn.Module):
                         preal = phase_real[:, pos:pos+self.subframe_size]
                         pimag = phase_imag[:, pos:pos+self.subframe_size]
                         prev = pre[:, pos-self.subframe_size:pos]
-                        sig_in = torch.cat([prev, preal, pimag], 1)
-                        _, states = self.sig_net(cond[:, n, :], sig_in, states)
+                        phase = torch.cat([preal, pimag], 1)
+                        _, states = self.sig_net(cond[:, n, :], prev, phase, states)
             prev = pre[:, -self.subframe_size:]
         for n in range(nb_frames):
             for k in range(self.nb_subframes):
                 pos = n*self.frame_size + k*self.subframe_size
                 preal = phase_real[:, pos:pos+self.subframe_size]
                 pimag = phase_imag[:, pos:pos+self.subframe_size]
-                sig_in = torch.cat([prev, preal, pimag], 1)
+                phase = torch.cat([preal, pimag], 1)
                 #print("now: ", preal.shape, prev.shape, sig_in.shape)
-                out, states = self.sig_net(cond[:, nb_pre_frames+n, :], sig_in, states)
+                out, states = self.sig_net(cond[:, nb_pre_frames+n, :], prev, phase, states)
                 sig = torch.cat([sig, out], 1)
                 prev = out
         states = [s.detach() for s in states]

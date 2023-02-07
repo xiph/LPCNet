@@ -69,7 +69,7 @@ checkpoint['adam_betas'] = adam_betas
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 checkpoint['model_args']    = ()
-checkpoint['model_kwargs']  = {'cond_size': cond_size}
+checkpoint['model_kwargs']  = {'cond_size': cond_size, 'has_gain': True}
 
 model = celpnet.CELPNet(*checkpoint['model_args'], **checkpoint['model_kwargs'])
 
