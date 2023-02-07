@@ -95,15 +95,16 @@ class CELPNet(nn.Module):
         self.cond_net = CELPNetCond(feature_dim=feature_dim, cond_size=cond_size)
         self.sig_net = CELPNetSub(subframe_size=subframe_size, nb_subframes=nb_subframes, cond_size=cond_size)
 
-    def forward(self, features, period, pre, nb_frames):
+    def forward(self, features, period, nb_frames, pre=None, states=None):
         device = features.device
         batch_size = features.size(0)
 
-        states = (
-            torch.zeros(batch_size, self.cond_size).to(device),
-            torch.zeros(batch_size, self.cond_size).to(device),
-            torch.zeros(batch_size, self.cond_size).to(device)
-        )
+        if states is None:
+            states = (
+                torch.zeros(batch_size, self.cond_size).to(device),
+                torch.zeros(batch_size, self.cond_size).to(device),
+                torch.zeros(batch_size, self.cond_size).to(device)
+            )
 
         sig = torch.zeros((batch_size, 0)).to(device)
         cond = self.cond_net(features, period)
@@ -124,5 +125,6 @@ class CELPNet(nn.Module):
                 out, states = self.sig_net(cond[:, nb_pre_frames+n, :], prev, states)
                 sig = torch.cat([sig, out], 1)
                 prev = out
-        return sig
+        states = [s.detach() for s in states]
+        return sig, states
 

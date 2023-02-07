@@ -57,7 +57,7 @@ if __name__ == '__main__':
     features = torch.tensor(features).to(device)
     periods = torch.tensor(periods).to(device)
     
-    sig = model(features, periods, None, nb_frames - 4)
+    sig, _ = model(features, periods, nb_frames - 4)
 
     pcm = np.round(32768*sig.detach().numpy()).astype('int16')
     pcm.tofile(signal_file)

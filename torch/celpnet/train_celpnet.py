@@ -97,6 +97,8 @@ spec2 = celpnet.new_specgram(320, 0, device)
 spec1b = celpnet.new_specgram(640, 0.5, device)
 spec2b = celpnet.new_specgram(640, 0, device)
 
+states = None
+
 if __name__ == '__main__':
     model.to(device)
 
@@ -116,7 +118,7 @@ if __name__ == '__main__':
                 periods = periods.to(device)
                 signal = signal.to(device)
                 pre = signal[:, :3*160]
-                sig = model(features, periods, pre, signal.size(1)//160 - 3)
+                sig, states = model(features, periods, signal.size(1)//160 - 3, pre=pre, states=states)
                 sig = torch.cat([pre, sig], -1)
 
                 #loss = celpnet.sig_l1(signal, sig)
