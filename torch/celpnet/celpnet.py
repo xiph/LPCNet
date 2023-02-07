@@ -29,6 +29,19 @@ def init_weights(module):
             if p[0].startswith('weight_hh_'):
                 nn.init.orthogonal_(p[1])
 
+def gen_phase_embedding(periods, frame_size):
+    device = periods.device
+    batch_size = periods.size(0)
+    nb_frames = periods.size(1)
+    w0 = 2*torch.pi/periods
+    w0_shift = torch.cat([2*torch.pi*torch.rand((batch_size, 1)).to(device)/frame_size, w0[:,:-1]], 1)
+    cum_phase = frame_size*torch.cumsum(w0_shift, 1)
+    fine_phase = w0[:,:,None]*torch.broadcast_to(torch.arange(frame_size).to(device), (batch_size, nb_frames, frame_size))
+    embed = torch.unsqueeze(cum_phase, 2) + fine_phase
+    embed = torch.reshape(embed, (batch_size, -1))
+    return torch.cos(embed), torch.sin(embed)
+
+
 class CELPNetCond(nn.Module):
     def __init__(self, feature_dim=20, cond_size=256, pembed_dims=64):
         super(CELPNetCond, self).__init__()
@@ -63,7 +76,7 @@ class CELPNetSub(nn.Module):
         self.nb_subframes = nb_subframes
         self.cond_size = cond_size
 
-        self.sig_dense1 = nn.Linear(self.subframe_size+self.cond_size, self.cond_size)
+        self.sig_dense1 = nn.Linear(3*self.subframe_size+self.cond_size, self.cond_size)
         self.sig_dense2 = nn.Linear(self.cond_size, self.cond_size)
         self.gru1 = nn.GRUCell(self.cond_size, self.cond_size)
         self.gru2 = nn.GRUCell(self.cond_size, self.cond_size)
@@ -73,6 +86,7 @@ class CELPNetSub(nn.Module):
         self.apply(init_weights)
 
     def forward(self, cond, prev, states):
+        #print(cond.shape, prev.shape)
         tmp = torch.cat((cond, prev), 1)
         tmp = torch.tanh(self.sig_dense1(tmp))
         tmp = torch.tanh(self.sig_dense2(tmp))
@@ -99,6 +113,9 @@ class CELPNet(nn.Module):
         device = features.device
         batch_size = features.size(0)
 
+        phase_real, phase_imag = gen_phase_embedding(period[:, 3:-1], self.frame_size)
+        #np.round(32000*phase.detach().numpy()).astype('int16').tofile('phase.sw')
+
         if states is None:
             states = (
                 torch.zeros(batch_size, self.cond_size).to(device),
@@ -117,12 +134,20 @@ class CELPNet(nn.Module):
                 for k in range(self.nb_subframes):
                     pos = n*self.frame_size + k*self.subframe_size
                     if pos > 0:
-                        _, states = self.sig_net(cond[:, n, :], pre[:, pos-self.subframe_size:pos], states)
+                        preal = phase_real[:, pos:pos+self.subframe_size]
+                        pimag = phase_imag[:, pos:pos+self.subframe_size]
+                        prev = pre[:, pos-self.subframe_size:pos]
+                        sig_in = torch.cat([prev, preal, pimag], 1)
+                        _, states = self.sig_net(cond[:, n, :], sig_in, states)
             prev = pre[:, -self.subframe_size:]
         for n in range(nb_frames):
             for k in range(self.nb_subframes):
                 pos = n*self.frame_size + k*self.subframe_size
-                out, states = self.sig_net(cond[:, nb_pre_frames+n, :], prev, states)
+                preal = phase_real[:, pos:pos+self.subframe_size]
+                pimag = phase_imag[:, pos:pos+self.subframe_size]
+                sig_in = torch.cat([prev, preal, pimag], 1)
+                #print("now: ", preal.shape, prev.shape, sig_in.shape)
+                out, states = self.sig_net(cond[:, nb_pre_frames+n, :], sig_in, states)
                 sig = torch.cat([sig, out], 1)
                 prev = out
         states = [s.detach() for s in states]
