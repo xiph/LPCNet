@@ -1,5 +1,6 @@
 import os
 import argparse
+import random
 
 import torch
 from torch import nn
@@ -108,6 +109,7 @@ if __name__ == '__main__':
         running_loss2 = 0
         running_loss1b = 0
         running_loss2b = 0
+        running_cont_loss = 0
         running_loss = 0
 
         print(f"training epoch {epoch}...")
@@ -117,8 +119,9 @@ if __name__ == '__main__':
                 features = features.to(device)
                 periods = periods.to(device)
                 signal = signal.to(device)
-                pre = signal[:, :3*160]
-                sig, states = model(features, periods, signal.size(1)//160 - 3, pre=pre, states=states)
+                nb_pre = random.randrange(1, 6)
+                pre = signal[:, :nb_pre*160]
+                sig, states = model(features, periods, signal.size(1)//160 - nb_pre, pre=pre, states=states)
                 sig = torch.cat([pre, sig], -1)
 
                 #loss = celpnet.sig_l1(signal, sig)
@@ -126,7 +129,8 @@ if __name__ == '__main__':
                 loss2 = celpnet.spec_l1(spec2, signal, sig)
                 loss1b = celpnet.spec_l1(spec1b, signal, sig)
                 loss2b = celpnet.spec_l1(spec2b, signal, sig)
-                loss = 5*loss1 + loss2 + 5*loss1b + loss2b
+                cont_loss = celpnet.sig_l1(signal[:, nb_pre*160:nb_pre*160+40], sig[:, nb_pre*160:nb_pre*160+40])
+                loss = 5*loss1 + loss2 + 5*loss1b + loss2b + 100*cont_loss
 
                 loss.backward()
                 optimizer.step()
@@ -139,6 +143,7 @@ if __name__ == '__main__':
                 running_loss2 += loss2.detach().cpu().item()
                 running_loss1b += loss1b.detach().cpu().item()
                 running_loss2b += loss2b.detach().cpu().item()
+                running_cont_loss += cont_loss.detach().cpu().item()
 
                 running_loss += loss.detach().cpu().item()
                 tepoch.set_postfix(loss=f"{running_loss/(i+1):8.5f}",
@@ -146,6 +151,7 @@ if __name__ == '__main__':
                                    loss2=f"{running_loss2/(i+1):8.5f}",
                                    loss1b=f"{running_loss1b/(i+1):8.5f}",
                                    loss2b=f"{running_loss2b/(i+1):8.5f}",
+                                   cont_loss=f"{running_cont_loss/(i+1):8.5f}",
                                    )
 
         # save checkpoint
