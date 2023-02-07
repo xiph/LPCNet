@@ -101,13 +101,17 @@ class CELPNet(nn.Module):
 
         sig = torch.zeros((batch_size, 0)).to(device)
         cond = self.cond_net(features)
-        nb_pre_frames = pre.size(1)//self.frame_size
-        for n in range(nb_pre_frames):
-            for k in range(self.nb_subframes):
-                pos = n*self.frame_size + k*self.subframe_size
-                if pos > 0:
-                    _, states = self.sig_net(cond[:, n, :], pre[:, pos-self.subframe_size:pos], states)
-        prev = pre[:, -self.subframe_size:]
+        if pre is None:
+            nb_pre_frames = 0
+            prev = torch.zeros(batch_size, self.subframe_size).to(device)
+        else:
+            nb_pre_frames = pre.size(1)//self.frame_size
+            for n in range(nb_pre_frames):
+                for k in range(self.nb_subframes):
+                    pos = n*self.frame_size + k*self.subframe_size
+                    if pos > 0:
+                        _, states = self.sig_net(cond[:, n, :], pre[:, pos-self.subframe_size:pos], states)
+            prev = pre[:, -self.subframe_size:]
         for n in range(nb_frames):
             for k in range(self.nb_subframes):
                 pos = n*self.frame_size + k*self.subframe_size
