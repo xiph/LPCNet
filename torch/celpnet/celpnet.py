@@ -1,9 +1,23 @@
+import numpy as np
 import torch
 from torch import nn
 import torch.nn.functional as F
 
+def new_specgram(N, device):
+    x = np.arange(N, dtype='float32')
+    w = np.sin(.5*np.pi*np.sin((x+.5)/N*np.pi)**2)
+    w = torch.tensor(x).to(device)
+    def compute_specgram(x):
+        X = torch.stft(x, N, hop_length=N//2, return_complex=True, center=False, window=w)
+        return 20*torch.log10(1e-5+torch.abs(X))
+
+    return compute_specgram
+
 def sig_l1(y_true, y_pred):
     return torch.mean(abs(y_true-y_pred))
+
+def spec_l1(spec, y_true, y_pred):
+    return torch.mean(abs(spec(y_true)-spec(y_pred)))
 
 # weight initialization and clipping
 def init_weights(module):

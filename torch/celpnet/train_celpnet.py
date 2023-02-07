@@ -9,13 +9,13 @@ from dataset import CELPNetDataset
 lr = 0.001
 adam_betas = [0.9, 0.99]
 adam_eps = 1e-8
-lr_decay_factor = 2e-5
+lr_decay_factor = 1e-4
 epochs = 20
 batch_size = 512
 features_file = 'features56.f32'
 signal_file = 'data56.s16'
 
-device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
+device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 model = celpnet.CELPNet()
 #model = nn.DataParallel(model)
@@ -29,6 +29,8 @@ optimizer = torch.optim.Adam(model.parameters(), lr=lr, betas=adam_betas, eps=ad
 
 # learning rate scheduler
 scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer=optimizer, lr_lambda=lambda x : 1 / (1 + lr_decay_factor * x))
+
+spec = celpnet.new_specgram(320, device)
 
 if __name__ == '__main__':
     model.to(device)
@@ -47,7 +49,10 @@ if __name__ == '__main__':
                 pre = signal[:, :3*160]
                 sig = model(features, pre, signal.size(1)//160 - 3)
                 sig = torch.cat([pre, sig], -1)
-                loss = celpnet.sig_l1(signal, sig)
+
+                #loss = celpnet.sig_l1(signal, sig)
+                loss = celpnet.spec_l1(spec, signal, sig)
+
                 loss.backward()
                 optimizer.step()
                 
@@ -55,5 +60,5 @@ if __name__ == '__main__':
                 
                 scheduler.step()
 
-                running_l1_loss += loss
-                tepoch.set_postfix(running_l1_loss=running_l1_loss/(i+1))
+                running_l1_loss += loss.detach().cpu().item()
+                tepoch.set_postfix(running_l1_loss=f"{running_l1_loss/(i+1):8.5f}")
