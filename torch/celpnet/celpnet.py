@@ -45,7 +45,7 @@ def spec_loss(y_true, y_pred, mask, alpha):
     diff = (y_true+1e-6)**alpha - (y_pred+1e-6)**alpha
     den = (1e-6+mask)**alpha
     diff = diff[:,:-1,:] / den
-    return torch.mean(torch.square(diff))
+    return torch.mean(torch.square(diff))/(alpha**2)
 
 def spec_l1(spec, y_true, y_pred):
     return torch.mean(abs(spec(y_true)-spec(y_pred)))

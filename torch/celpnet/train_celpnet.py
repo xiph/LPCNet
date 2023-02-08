@@ -69,7 +69,7 @@ checkpoint['adam_betas'] = adam_betas
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 checkpoint['model_args']    = ()
-checkpoint['model_kwargs']  = {'cond_size': cond_size, 'has_gain': False}
+checkpoint['model_kwargs']  = {'cond_size': cond_size, 'has_gain': True}
 
 model = celpnet.CELPNet(*checkpoint['model_args'], **checkpoint['model_kwargs'])
 
@@ -130,9 +130,9 @@ if __name__ == '__main__':
                 loss320 = celpnet.spec_loss(T320, S320, T320m, 0.3)
                 loss640 = celpnet.spec_loss(T640, S640, T640m, 0.3)
                 lsd320 = celpnet.lsd_loss(T320m, S320m)
-                lsd640 = celpnet.lsd_loss(T320m, S320m)
+                lsd640 = celpnet.lsd_loss(T640m, S640m)
                 cont_loss = celpnet.sig_l1(target[:, nb_pre*160:nb_pre*160+40], sig[:, nb_pre*160:nb_pre*160+40])
-                loss = loss320 + loss640 + .04*lsd320 + .04*lsd640 + 100*cont_loss
+                loss = loss320 + loss640 + .05*lsd320 + .05*lsd640 + 100*cont_loss
                 #loss = lsd320
 
                 loss.backward()
