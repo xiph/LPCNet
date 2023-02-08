@@ -3,21 +3,49 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-def new_specgram(N, alpha, device):
+Fs = 16000
+
+def gen_filterbank(N):
+    in_freq = (np.arange(N+1, dtype='float32')/N*Fs/2)[None,:]
+    out_freq = (np.arange(N, dtype='float32')/N*Fs/2)[:,None]
+    #ERB from B.C.J Moore, An Introduction to the Psychology of Hearing, 5th Ed., page 73.
+    ERB_N = 24.7 + .108*in_freq
+    delta = np.abs(in_freq-out_freq)/ERB_N
+    center = (delta<.5).astype('float32')
+    R = -12*center*delta**2 + (1-center)*(3-12*delta)
+    RE = 10.**(R/10.)
+    norm = np.sum(RE, axis=0)
+    print(norm.shape)
+    RE = RE/norm
+    return torch.tensor(RE)
+
+
+def new_specgram(N, device):
     x = np.arange(N, dtype='float32')
     w = np.sin(.5*np.pi*np.sin((x+.5)/N*np.pi)**2)
     w = torch.tensor(w).to(device)
+    mask = gen_filterbank(N//2).to(device)
     def compute_specgram(x):
         X = torch.stft(x, N, hop_length=N//4, return_complex=True, center=False, window=w)
-        if alpha == 0:
-            return 20*torch.log10(1e-5+torch.abs(X))
-        else:
-            return (1./alpha)*(1e-15+torch.abs(X))**alpha
+        X = torch.abs(X)**2
+        M = torch.matmul(mask, X)
+        return X, M
 
     return compute_specgram
 
 def sig_l1(y_true, y_pred):
     return torch.mean(abs(y_true-y_pred))
+
+def lsd_loss(y_true, y_pred):
+    T = 10*torch.log10(1e-8+y_true)
+    P = 10*torch.log10(1e-8+y_pred)
+    return torch.mean(torch.square(T-P))
+
+def spec_loss(y_true, y_pred, mask, alpha):
+    diff = (y_true+1e-6)**alpha - (y_pred+1e-6)**alpha
+    den = (1e-6+mask)**alpha
+    diff = diff[:,:-1,:] / den
+    return torch.mean(torch.square(diff))
 
 def spec_l1(spec, y_true, y_pred):
     return torch.mean(abs(spec(y_true)-spec(y_pred)))

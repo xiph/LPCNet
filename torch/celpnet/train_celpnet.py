@@ -69,7 +69,7 @@ checkpoint['adam_betas'] = adam_betas
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 checkpoint['model_args']    = ()
-checkpoint['model_kwargs']  = {'cond_size': cond_size, 'has_gain': True}
+checkpoint['model_kwargs']  = {'cond_size': cond_size, 'has_gain': False}
 
 model = celpnet.CELPNet(*checkpoint['model_args'], **checkpoint['model_kwargs'])
 
@@ -93,10 +93,8 @@ optimizer = torch.optim.Adam(model.parameters(), lr=lr, betas=adam_betas, eps=ad
 # learning rate scheduler
 scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer=optimizer, lr_lambda=lambda x : 1 / (1 + lr_decay * x))
 
-spec1 = celpnet.new_specgram(320, 0.5, device)
-spec2 = celpnet.new_specgram(320, 0, device)
-spec1b = celpnet.new_specgram(640, 0.5, device)
-spec2b = celpnet.new_specgram(640, 0, device)
+spec320 = celpnet.new_specgram(320, device)
+spec640 = celpnet.new_specgram(640, device)
 
 states = None
 
@@ -105,32 +103,37 @@ if __name__ == '__main__':
 
     for epoch in range(1, epochs + 1):
 
-        running_loss1 = 0
-        running_loss2 = 0
-        running_loss1b = 0
-        running_loss2b = 0
+        running_loss320 = 0
+        running_loss640 = 0
+        running_lsd320 = 0
+        running_lsd640 = 0
         running_cont_loss = 0
         running_loss = 0
 
         print(f"training epoch {epoch}...")
         with tqdm.tqdm(dataloader, unit='batch') as tepoch:
-            for i, (features, periods, signal) in enumerate(tepoch):
+            for i, (features, periods, target) in enumerate(tepoch):
                 optimizer.zero_grad()
                 features = features.to(device)
                 periods = periods.to(device)
-                signal = signal.to(device)
+                target = target.to(device)
                 nb_pre = random.randrange(1, 6)
-                pre = signal[:, :nb_pre*160]
-                sig, states = model(features, periods, signal.size(1)//160 - nb_pre, pre=pre, states=states)
+                pre = target[:, :nb_pre*160]
+                sig, states = model(features, periods, target.size(1)//160 - nb_pre, pre=pre, states=states)
                 sig = torch.cat([pre, sig], -1)
 
-                #loss = celpnet.sig_l1(signal, sig)
-                loss1 = celpnet.spec_l1(spec1, signal, sig)
-                loss2 = celpnet.spec_l1(spec2, signal, sig)
-                loss1b = celpnet.spec_l1(spec1b, signal, sig)
-                loss2b = celpnet.spec_l1(spec2b, signal, sig)
-                cont_loss = celpnet.sig_l1(signal[:, nb_pre*160:nb_pre*160+40], sig[:, nb_pre*160:nb_pre*160+40])
-                loss = 100*loss1 + loss2 + 100*loss1b + loss2b + 100*cont_loss
+                T320, T320m = spec320(target)
+                S320, S320m = spec320(sig)
+                T640, T640m = spec640(target)
+                S640, S640m = spec640(sig)
+
+                loss320 = celpnet.spec_loss(T320, S320, T320m, 0.3)
+                loss640 = celpnet.spec_loss(T640, S640, T640m, 0.3)
+                lsd320 = celpnet.lsd_loss(T320m, S320m)
+                lsd640 = celpnet.lsd_loss(T320m, S320m)
+                cont_loss = celpnet.sig_l1(target[:, nb_pre*160:nb_pre*160+40], sig[:, nb_pre*160:nb_pre*160+40])
+                loss = loss320 + loss640 + .04*lsd320 + .04*lsd640 + 100*cont_loss
+                #loss = lsd320
 
                 loss.backward()
                 optimizer.step()
@@ -139,18 +142,18 @@ if __name__ == '__main__':
                 
                 scheduler.step()
 
-                running_loss1 += loss1.detach().cpu().item()
-                running_loss2 += loss2.detach().cpu().item()
-                running_loss1b += loss1b.detach().cpu().item()
-                running_loss2b += loss2b.detach().cpu().item()
+                running_loss320 += loss320.detach().cpu().item()
+                running_loss640 += loss640.detach().cpu().item()
+                running_lsd320 += lsd320.detach().cpu().item()
+                running_lsd640 += lsd640.detach().cpu().item()
                 running_cont_loss += cont_loss.detach().cpu().item()
 
                 running_loss += loss.detach().cpu().item()
                 tepoch.set_postfix(loss=f"{running_loss/(i+1):8.5f}",
-                                   loss1=f"{running_loss1/(i+1):8.5f}",
-                                   loss2=f"{running_loss2/(i+1):8.5f}",
-                                   loss1b=f"{running_loss1b/(i+1):8.5f}",
-                                   loss2b=f"{running_loss2b/(i+1):8.5f}",
+                                   loss320=f"{running_loss320/(i+1):8.5f}",
+                                   loss640=f"{running_loss640/(i+1):8.5f}",
+                                   lsd320=f"{running_lsd320/(i+1):8.5f}",
+                                   lsd640=f"{running_lsd640/(i+1):8.5f}",
                                    cont_loss=f"{running_cont_loss/(i+1):8.5f}",
                                    )
 
