@@ -6,13 +6,13 @@ import torch.nn.functional as F
 def new_specgram(N, alpha, device):
     x = np.arange(N, dtype='float32')
     w = np.sin(.5*np.pi*np.sin((x+.5)/N*np.pi)**2)
-    w = torch.tensor(x).to(device)
+    w = torch.tensor(w).to(device)
     def compute_specgram(x):
         X = torch.stft(x, N, hop_length=N//4, return_complex=True, center=False, window=w)
         if alpha == 0:
             return 20*torch.log10(1e-5+torch.abs(X))
         else:
-            return (1./alpha)*(1e-5+torch.abs(X))**alpha
+            return (1./alpha)*(1e-15+torch.abs(X))**alpha
 
     return compute_specgram
 

@@ -130,7 +130,7 @@ if __name__ == '__main__':
                 loss1b = celpnet.spec_l1(spec1b, signal, sig)
                 loss2b = celpnet.spec_l1(spec2b, signal, sig)
                 cont_loss = celpnet.sig_l1(signal[:, nb_pre*160:nb_pre*160+40], sig[:, nb_pre*160:nb_pre*160+40])
-                loss = 5*loss1 + loss2 + 5*loss1b + loss2b + 100*cont_loss
+                loss = 100*loss1 + loss2 + 100*loss1b + loss2b + 100*cont_loss
 
                 loss.backward()
                 optimizer.step()
