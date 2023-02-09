@@ -1,6 +1,7 @@
 import os
 import argparse
 import random
+import numpy as np
 
 import torch
 from torch import nn
@@ -22,6 +23,7 @@ parser.add_argument('--cuda-visible-devices', type=str, help="comma separates li
 
 model_group = parser.add_argument_group(title="model parameters")
 model_group.add_argument('--cond-size', type=int, help="first conditioning size, default: 256", default=256)
+model_group.add_argument('--has-gain', type=bool, help="use gain-shape network, default: False", default=False)
 
 training_group = parser.add_argument_group(title="training parameters")
 training_group.add_argument('--batch-size', type=int, help="batch size, default: 512", default=512)
@@ -69,7 +71,7 @@ checkpoint['adam_betas'] = adam_betas
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 checkpoint['model_args']    = ()
-checkpoint['model_kwargs']  = {'cond_size': cond_size, 'has_gain': True}
+checkpoint['model_kwargs']  = {'cond_size': cond_size, 'has_gain': args.has_gain}
 
 model = celpnet.CELPNet(*checkpoint['model_args'], **checkpoint['model_kwargs'])
 
@@ -98,6 +100,9 @@ spec640 = celpnet.new_specgram(640, device)
 
 states = None
 
+fweight320 = celpnet.gen_weight(320//2, device)
+fweight640 = celpnet.gen_weight(640//2, device)
+
 if __name__ == '__main__':
     model.to(device)
 
@@ -117,7 +122,8 @@ if __name__ == '__main__':
                 features = features.to(device)
                 periods = periods.to(device)
                 target = target.to(device)
-                nb_pre = random.randrange(1, 6)
+                #nb_pre = random.randrange(1, 6)
+                nb_pre = int(np.minimum(8, 1-2*np.log(np.random.rand())))
                 pre = target[:, :nb_pre*160]
                 sig, states = model(features, periods, target.size(1)//160 - nb_pre, pre=pre, states=states)
                 sig = torch.cat([pre, sig], -1)
@@ -127,10 +133,10 @@ if __name__ == '__main__':
                 T640, T640m = spec640(target)
                 S640, S640m = spec640(sig)
 
-                loss320 = celpnet.spec_loss(T320, S320, T320m, 0.3)
-                loss640 = celpnet.spec_loss(T640, S640, T640m, 0.3)
-                lsd320 = celpnet.lsd_loss(T320m, S320m)
-                lsd640 = celpnet.lsd_loss(T640m, S640m)
+                loss320 = celpnet.spec_loss(T320, S320, T320m, 0.3, fweight320)
+                loss640 = celpnet.spec_loss(T640, S640, T640m, 0.3, fweight640)
+                lsd320 = celpnet.lsd_loss(T320m, S320m, fweight320)
+                lsd640 = celpnet.lsd_loss(T640m, S640m, fweight640)
                 cont_loss = celpnet.sig_l1(target[:, nb_pre*160:nb_pre*160+40], sig[:, nb_pre*160:nb_pre*160+40])
                 loss = loss320 + loss640 + .05*lsd320 + .05*lsd640 + 100*cont_loss
                 #loss = lsd320
