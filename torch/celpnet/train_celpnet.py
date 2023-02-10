@@ -142,7 +142,7 @@ if __name__ == '__main__':
                 lsd320 = celpnet.lsd_loss(T320m, S320m, fweight320)
                 lsd640 = celpnet.lsd_loss(T640m, S640m, fweight640)
                 cont_loss = celpnet.sig_l1(target[:, nb_pre*160:nb_pre*160+40], sig[:, nb_pre*160:nb_pre*160+40])
-                loss = loss320 + loss640 + .05*lsd320 + .05*lsd640 + 100*cont_loss
+                loss = loss320 + loss640 + .05*lsd320 + .05*lsd640 + 0*cont_loss
                 #loss = lsd320
 
                 loss.backward()

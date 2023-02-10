@@ -46,6 +46,7 @@ model = celpnet.CELPNet(*checkpoint['model_args'], **checkpoint['model_kwargs'])
 model.load_state_dict(checkpoint['state_dict'], strict=False)
 
 features = np.reshape(np.memmap(features_file, dtype='float32', mode='r'), (1, -1, nb_features))
+lpc = features[:,4-1:-1,nb_used_features:]
 features = features[:, :, :nb_used_features]
 periods = np.round(50*features[:,:,nb_used_features-2]+100).astype('int')
 
@@ -55,9 +56,10 @@ nb_frames = features.shape[1]
 if __name__ == '__main__':
     model.to(device)
     features = torch.tensor(features).to(device)
+    lpc = torch.tensor(lpc).to(device)
     periods = torch.tensor(periods).to(device)
     
-    sig, _ = model(features, periods, nb_frames - 4)
+    sig, _ = model(features, periods, nb_frames - 4, lpc=lpc)
 
     pcm = np.round(32768*sig.detach().numpy()).astype('int16')
     pcm.tofile(signal_file)
