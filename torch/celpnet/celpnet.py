@@ -15,7 +15,7 @@ def gen_filterbank(N, device):
     R = -12*center*delta**2 + (1-center)*(3-12*delta)
     RE = 10.**(R/10.)
     norm = np.sum(RE, axis=0)
-    print(norm.shape)
+    #print(norm.shape)
     RE = RE/norm
     return torch.tensor(RE).to(device)
 
@@ -104,24 +104,26 @@ class CELPNetCond(nn.Module):
         return tmp
 
 class CELPNetSub(nn.Module):
-    def __init__(self, subframe_size=40, nb_subframes=4, cond_size=256, has_gain=False):
+    def __init__(self, subframe_size=40, nb_subframes=4, cond_size=256, passthrough_size=0, has_gain=False):
         super(CELPNetSub, self).__init__()
 
         self.subframe_size = subframe_size
         self.nb_subframes = nb_subframes
         self.cond_size = cond_size
         self.has_gain = has_gain
+        self.passthrough_size = passthrough_size
         
         print("has_gain:", self.has_gain)
+        print("passthrough_size:", self.passthrough_size)
         
         gain_param = 1 if self.has_gain else 0
 
-        self.sig_dense1 = nn.Linear(3*self.subframe_size+self.cond_size+gain_param, self.cond_size)
+        self.sig_dense1 = nn.Linear(3*self.subframe_size+self.passthrough_size+self.cond_size+gain_param, self.cond_size)
         self.sig_dense2 = nn.Linear(self.cond_size, self.cond_size)
         self.gru1 = nn.GRUCell(self.cond_size, self.cond_size)
         self.gru2 = nn.GRUCell(self.cond_size, self.cond_size)
         self.gru3 = nn.GRUCell(self.cond_size, self.cond_size)
-        self.sig_dense_out = nn.Linear(self.cond_size, self.subframe_size)
+        self.sig_dense_out = nn.Linear(self.cond_size, self.subframe_size+self.passthrough_size)
         if self.has_gain:
             self.gain_dense_out = nn.Linear(self.cond_size, 1)
 
@@ -134,21 +136,26 @@ class CELPNetSub(nn.Module):
             gain = torch.norm(prev, dim=1, p=2, keepdim=True)
             prev = prev/(1e-5+gain)
             prev = torch.cat([prev, torch.log(1e-5+gain)], 1)
-        
-        tmp = torch.cat((cond, prev, phase), 1)
+
+        passthrough = states[3]
+        tmp = torch.cat((cond, prev, passthrough, phase), 1)
+
         tmp = torch.tanh(self.sig_dense1(tmp))
         tmp = torch.tanh(self.sig_dense2(tmp))
         gru1_state = self.gru1(tmp, states[0])
         gru2_state = self.gru2(gru1_state, states[1])
         gru3_state = self.gru3(gru2_state, states[2])
         sig_out = torch.tanh(self.sig_dense_out(gru3_state))
+        if self.passthrough_size != 0:
+            passthrough = sig_out[:,self.subframe_size:]
+            sig_out = sig_out[:,:self.subframe_size]
         if self.has_gain:
             out_gain = torch.exp(self.gain_dense_out(gru3_state))
             sig_out = sig_out * out_gain
-        return sig_out, (gru1_state, gru2_state, gru3_state)
+        return sig_out, (gru1_state, gru2_state, gru3_state, passthrough)
 
 class CELPNet(nn.Module):
-    def __init__(self, subframe_size=40, nb_subframes=4, feature_dim=20, cond_size=256, stateful=False, has_gain=False):
+    def __init__(self, subframe_size=40, nb_subframes=4, feature_dim=20, cond_size=256, passthrough_size=0, stateful=False, has_gain=False):
         super(CELPNet, self).__init__()
 
         self.subframe_size = subframe_size
@@ -158,9 +165,10 @@ class CELPNet(nn.Module):
         self.cond_size = cond_size
         self.stateful = stateful
         self.has_gain = has_gain
+        self.passthrough_size = passthrough_size
 
         self.cond_net = CELPNetCond(feature_dim=feature_dim, cond_size=cond_size)
-        self.sig_net = CELPNetSub(subframe_size=subframe_size, nb_subframes=nb_subframes, cond_size=cond_size, has_gain=has_gain)
+        self.sig_net = CELPNetSub(subframe_size=subframe_size, nb_subframes=nb_subframes, cond_size=cond_size, has_gain=has_gain, passthrough_size=passthrough_size)
 
     def forward(self, features, period, nb_frames, pre=None, states=None):
         device = features.device
@@ -173,11 +181,13 @@ class CELPNet(nn.Module):
             states = (
                 torch.zeros(batch_size, self.cond_size).to(device),
                 torch.zeros(batch_size, self.cond_size).to(device),
-                torch.zeros(batch_size, self.cond_size).to(device)
+                torch.zeros(batch_size, self.cond_size).to(device),
+                torch.zeros(batch_size, self.passthrough_size).to(device)
             )
 
         sig = torch.zeros((batch_size, 0)).to(device)
         cond = self.cond_net(features, period)
+        passthrough = torch.zeros(batch_size, self.passthrough_size).to(device)
         if pre is None:
             nb_pre_frames = 0
             prev = torch.zeros(batch_size, self.subframe_size).to(device)
