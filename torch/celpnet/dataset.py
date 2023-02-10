@@ -33,14 +33,20 @@ class CELPNetDataset(torch.utils.data.Dataset):
                                            strides=(self.sequence_length*self.nb_features*sizeof, self.nb_features*sizeof, sizeof))
         self.periods = np.round(50*self.features[:,:,self.nb_used_features-2]+100).astype('int')
 
+        self.lpc = self.features[:, :, self.nb_used_features:]
         self.features = self.features[:, :, :self.nb_used_features]
+        print("lpc_size:", self.lpc.shape)
 
     def __len__(self):
         return self.nb_sequences
 
     def __getitem__(self, index):
         features = self.features[index, :, :].copy()
+        if self.lookahead != 0:
+            lpc = self.lpc[index, 4-self.lookahead:-self.lookahead, :].copy()
+        else:
+            lpc = self.lpc[index, 4:, :].copy()
         data = self.data[index, :].copy().astype(np.float32) / 2**15
         periods = self.periods[index, :].copy()
 
-        return features, periods, data
+        return features, periods, data, lpc

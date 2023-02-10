@@ -23,7 +23,8 @@ parser.add_argument('--cuda-visible-devices', type=str, help="comma separates li
 
 model_group = parser.add_argument_group(title="model parameters")
 model_group.add_argument('--cond-size', type=int, help="first conditioning size, default: 256", default=256)
-model_group.add_argument('--has-gain', type=bool, help="use gain-shape network, default: False", default=False)
+model_group.add_argument('--has-gain', action='store_true', help="use gain-shape network")
+model_group.add_argument('--has-lpc', action='store_true', help="use LPC")
 model_group.add_argument('--passthrough-size', type=int, help="state passing through in addition to audio, default: 0", default=0)
 
 training_group = parser.add_argument_group(title="training parameters")
@@ -72,8 +73,9 @@ checkpoint['adam_betas'] = adam_betas
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 checkpoint['model_args']    = ()
-checkpoint['model_kwargs']  = {'cond_size': cond_size, 'has_gain': args.has_gain, 'passthrough_size': args.passthrough_size}
-
+checkpoint['model_kwargs']  = {'cond_size': cond_size, 'has_gain': args.has_gain, 'has_lpc': args.has_lpc, 'passthrough_size': args.passthrough_size}
+print('has_lpc', args.has_lpc)
+print(checkpoint['model_kwargs'])
 model = celpnet.CELPNet(*checkpoint['model_args'], **checkpoint['model_kwargs'])
 
 #model = celpnet.CELPNet()
@@ -118,15 +120,16 @@ if __name__ == '__main__':
 
         print(f"training epoch {epoch}...")
         with tqdm.tqdm(dataloader, unit='batch') as tepoch:
-            for i, (features, periods, target) in enumerate(tepoch):
+            for i, (features, periods, target, lpc) in enumerate(tepoch):
                 optimizer.zero_grad()
                 features = features.to(device)
+                lpc = lpc.to(device)
                 periods = periods.to(device)
                 target = target.to(device)
                 #nb_pre = random.randrange(1, 6)
                 nb_pre = int(np.minimum(8, 1-2*np.log(np.random.rand())))
                 pre = target[:, :nb_pre*160]
-                sig, states = model(features, periods, target.size(1)//160 - nb_pre, pre=pre, states=states)
+                sig, states = model(features, periods, target.size(1)//160 - nb_pre, pre=pre, states=states, lpc=lpc)
                 sig = torch.cat([pre, sig], -1)
 
                 T320, T320m = spec320(target)
