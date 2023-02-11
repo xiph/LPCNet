@@ -127,9 +127,9 @@ if __name__ == '__main__':
                 periods = periods.to(device)
                 target = target.to(device)
                 #nb_pre = random.randrange(1, 6)
-                nb_pre = int(np.minimum(8, 1-2*np.log(np.random.rand())))
+                nb_pre = 0*int(np.minimum(8, 1-2*np.log(np.random.rand())))
                 pre = target[:, :nb_pre*160]
-                sig, states = model(features, periods, target.size(1)//160 - nb_pre, pre=pre, states=states, lpc=lpc)
+                sig, states = model(features, periods, target.size(1)//160 - nb_pre, states=states, lpc=lpc)
                 sig = torch.cat([pre, sig], -1)
 
                 T320, T320m = spec320(target)

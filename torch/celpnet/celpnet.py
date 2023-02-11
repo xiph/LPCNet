@@ -133,7 +133,8 @@ class CELPNetSub(nn.Module):
 
         self.apply(init_weights)
 
-    def forward(self, cond, prev, phase, states, mat=None):
+    def forward(self, cond, prev, exc_mem, phase, period, states, mat=None):
+        device = exc_mem.device
         #print(cond.shape, prev.shape)
         
         if self.has_lpc:
@@ -141,7 +142,11 @@ class CELPNetSub(nn.Module):
             fir_mat = mat[0]
             exc = torch.bmm(fir_mat, mem)
 
-        prev = prev*0
+        idx = 256-torch.maximum(torch.tensor(self.subframe_size).to(device), period[:,None])
+        rng = torch.arange(self.subframe_size).to(device)
+        idx = idx + rng[None,:]
+        prev = torch.gather(exc_mem, 1, idx)
+        #prev = prev*0
         if self.has_gain:
             gain = torch.norm(prev, dim=1, p=2, keepdim=True)
             prev = prev/(1e-5+gain)
@@ -162,13 +167,14 @@ class CELPNetSub(nn.Module):
         if self.has_gain:
             out_gain = torch.exp(self.gain_dense_out(gru3_state))
             sig_out = sig_out * out_gain
+        exc_mem = torch.cat([exc_mem[:,:-self.subframe_size], sig_out], 1)
         if self.has_lpc:
             iir_mat = mat[1]
             exc2 = torch.cat([exc, sig_out.reshape(-1, self.subframe_size, 1)], 1)
             #print("bmm iir:", iir_mat.shape, exc2.shape)
             syn = torch.bmm(iir_mat, exc2)
             sig_out = syn[:,16:,0]
-        return sig_out, (gru1_state, gru2_state, gru3_state, passthrough)
+        return sig_out, exc_mem, (gru1_state, gru2_state, gru3_state, passthrough)
 
 class CELPNet(nn.Module):
     def __init__(self, subframe_size=40, nb_subframes=4, feature_dim=20, cond_size=256, passthrough_size=0, stateful=False, has_gain=False, has_lpc=False):
@@ -203,6 +209,8 @@ class CELPNet(nn.Module):
         phase_real, phase_imag = gen_phase_embedding(period[:, 3:-1], self.frame_size)
         #np.round(32000*phase.detach().numpy()).astype('int16').tofile('phase.sw')
 
+        exc_mem = torch.zeros(batch_size, 256).to(device)
+
         if states is None:
             states = (
                 torch.zeros(batch_size, self.cond_size).to(device),
@@ -228,9 +236,9 @@ class CELPNet(nn.Module):
                         prev = pre[:, pos-self.subframe_size:pos]
                         phase = torch.cat([preal, pimag], 1)
                         if self.has_lpc:
-                            _, states = self.sig_net(cond[:, n, :], prev, phase, states, mat=(fir_mat[:,n,:,:], iir_mat[:,n,:,:]))
+                            _, exc_mem, states = self.sig_net(cond[:, n, :], prev, exc_mem, phase, states, mat=(fir_mat[:,n,:,:], iir_mat[:,n,:,:]))
                         else:
-                            _, states = self.sig_net(cond[:, n, :], prev, phase, states)
+                            _, exc_mem, states = self.sig_net(cond[:, n, :], prev, exc_mem, phase, states)
             prev = pre[:, -self.subframe_size:]
         for n in range(nb_frames):
             for k in range(self.nb_subframes):
@@ -239,10 +247,11 @@ class CELPNet(nn.Module):
                 pimag = phase_imag[:, pos:pos+self.subframe_size]
                 phase = torch.cat([preal, pimag], 1)
                 #print("now: ", preal.shape, prev.shape, sig_in.shape)
+                pitch = period[:, 3+nb_pre_frames+n]
                 if self.has_lpc:
-                    out, states = self.sig_net(cond[:, nb_pre_frames+n, :], prev, phase, states, mat=(fir_mat[:,nb_pre_frames+n,:,:], iir_mat[:,nb_pre_frames+n,:,:]))
+                    out, exc_mem, states = self.sig_net(cond[:, nb_pre_frames+n, :], prev, exc_mem, phase, pitch, states, mat=(fir_mat[:,nb_pre_frames+n,:,:], iir_mat[:,nb_pre_frames+n,:,:]))
                 else:
-                    out, states = self.sig_net(cond[:, nb_pre_frames+n, :], prev, phase, states)
+                    out, exc_mem, states = self.sig_net(cond[:, nb_pre_frames+n, :], prev, exc_mem, phase, pitch, states)
                 sig = torch.cat([sig, out], 1)
                 prev = out
         states = [s.detach() for s in states]

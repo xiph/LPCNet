@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
+import math
 
 def toeplitz_from_filter(a):
     device = a.device
@@ -9,8 +10,18 @@ def toeplitz_from_filter(a):
     A = torch.zeros(size).to(device)
     #print(L, A.shape)
     #Compute lower-triangular Toeplitz
-    for i in range(L):
-        A[:,:,i:,i] = a[:,:,:L-i]
+    if True:
+        #Copy in log2(L) steps
+        A[:,:,:,0] = a[:,:,:]
+        LL = int(math.log2(L))
+        N=1
+        for i in range(LL):
+            A[:,:,N:,N:2*N] = A[:,:,:-N,:N]
+            N *= 2
+        A[:,:,N:,N:L] = A[:,:,:-N,:L-N]
+    else:
+        for i in range(L):
+            A[:,:,i:,i] = a[:,:,:L-i]
     return A
 
 def filter_iir_response(a, N):
@@ -22,8 +33,10 @@ def filter_iir_response(a, N):
     R[:,:,0] = torch.ones((*(a.shape[:-1]))).to(device)
     for i in range(1, L):
         R[:,:,i] = - torch.sum(ar[:,:,L-i-1:-1] * R[:,:,:i], axis=-1)
+        #R[:,:,i] = - torch.einsum('ijk,ijk->ij', ar[:,:,L-i-1:-1], R[:,:,:i])
     for i in range(L, N):
         R[:,:,i] = - torch.sum(ar[:,:,:-1] * R[:,:,i-L+1:i], axis=-1)
+        #R[:,:,i] = - torch.einsum('ijk,ijk->ij', ar[:,:,:-1], R[:,:,i-L+1:i])
     return R
 
 if __name__ == '__main__':
