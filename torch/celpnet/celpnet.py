@@ -133,7 +133,7 @@ class CELPNetSub(nn.Module):
 
         self.apply(init_weights)
 
-    def forward(self, cond, prev, exc_mem, phase, period, states, mat=None):
+    def forward(self, cond, prev, exc_mem, phase, period, states, mat=None, groundtruth=None):
         device = exc_mem.device
         #print(cond.shape, prev.shape)
         
@@ -199,8 +199,11 @@ class CELPNet(nn.Module):
 
         if self.has_lpc:
             ones = torch.ones((*(lpc.shape[:-1]), 1)).to(device)
+            zeros = torch.zeros((*(lpc.shape[:-1]), self.subframe_size-1)).to(device)
             a = torch.cat([ones, lpc], -1)
+            a_big = torch.cat([a, zeros], -1)
             fir_mat = filters.toeplitz_from_filter(a)[:,:,:-1,:-1]
+            fir_mat_big = filters.toeplitz_from_filter(a_big)
             iir_mat = filters.toeplitz_from_filter(filters.filter_iir_response(a, self.subframe_size+16))
         else:
             fir_mat=None
@@ -209,7 +212,10 @@ class CELPNet(nn.Module):
         phase_real, phase_imag = gen_phase_embedding(period[:, 3:-1], self.frame_size)
         #np.round(32000*phase.detach().numpy()).astype('int16').tofile('phase.sw')
 
+        prev = torch.zeros(batch_size, self.subframe_size).to(device)
         exc_mem = torch.zeros(batch_size, 256).to(device)
+        groundtruth = torch.zeros(batch_size, self.subframe_size+16).to(device)
+        nb_pre_frames = pre.size(1)//self.frame_size if pre is not None else 0
 
         if states is None:
             states = (
@@ -222,37 +228,26 @@ class CELPNet(nn.Module):
         sig = torch.zeros((batch_size, 0)).to(device)
         cond = self.cond_net(features, period)
         passthrough = torch.zeros(batch_size, self.passthrough_size).to(device)
-        if pre is None:
-            nb_pre_frames = 0
-            prev = torch.zeros(batch_size, self.subframe_size).to(device)
-        else:
-            nb_pre_frames = pre.size(1)//self.frame_size
-            for n in range(nb_pre_frames):
-                for k in range(self.nb_subframes):
-                    pos = n*self.frame_size + k*self.subframe_size
-                    if pos > 0:
-                        preal = phase_real[:, pos:pos+self.subframe_size]
-                        pimag = phase_imag[:, pos:pos+self.subframe_size]
-                        prev = pre[:, pos-self.subframe_size:pos]
-                        phase = torch.cat([preal, pimag], 1)
-                        if self.has_lpc:
-                            _, exc_mem, states = self.sig_net(cond[:, n, :], prev, exc_mem, phase, states, mat=(fir_mat[:,n,:,:], iir_mat[:,n,:,:]))
-                        else:
-                            _, exc_mem, states = self.sig_net(cond[:, n, :], prev, exc_mem, phase, states)
-            prev = pre[:, -self.subframe_size:]
-        for n in range(nb_frames):
+        for n in range(nb_frames+nb_pre_frames):
             for k in range(self.nb_subframes):
                 pos = n*self.frame_size + k*self.subframe_size
                 preal = phase_real[:, pos:pos+self.subframe_size]
                 pimag = phase_imag[:, pos:pos+self.subframe_size]
                 phase = torch.cat([preal, pimag], 1)
                 #print("now: ", preal.shape, prev.shape, sig_in.shape)
-                pitch = period[:, 3+nb_pre_frames+n]
-                if self.has_lpc:
-                    out, exc_mem, states = self.sig_net(cond[:, nb_pre_frames+n, :], prev, exc_mem, phase, pitch, states, mat=(fir_mat[:,nb_pre_frames+n,:,:], iir_mat[:,nb_pre_frames+n,:,:]))
+                pitch = period[:, 3+n]
+                mat = (fir_mat[:,n,:,:], iir_mat[:,n,:,:]) if self.has_lpc else None
+                out, exc_mem, states = self.sig_net(cond[:, n, :], prev, exc_mem, phase, pitch, states, mat=mat)
+
+                if n < nb_pre_frames:
+                    out = pre[:, pos:pos+self.subframe_size]
+                    groundtruth = torch.cat([groundtruth[:,:-self.subframe_size], out], 1)
+                    if self.has_lpc:
+                        groundtruth_exc = torch.bmm(fir_mat_big[:,n,:,:], groundtruth[:,:,None])
+                        exc_mem[:,-self.subframe_size:] = groundtruth_exc[:,-self.subframe_size:,0]
                 else:
-                    out, exc_mem, states = self.sig_net(cond[:, nb_pre_frames+n, :], prev, exc_mem, phase, pitch, states)
-                sig = torch.cat([sig, out], 1)
+                    sig = torch.cat([sig, out], 1)
+
                 prev = out
         states = [s.detach() for s in states]
         return sig, states
