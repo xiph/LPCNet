@@ -60,6 +60,12 @@ if __name__ == '__main__':
     periods = torch.tensor(periods).to(device)
     
     sig, _ = model(features, periods, nb_frames - 4, lpc=lpc)
+    
+    sig = sig.detach().numpy().flatten()
+    mem = 0
+    for i in range(len(sig)):
+        sig[i] += 0.85*mem
+        mem = sig[i]
 
-    pcm = np.round(32768*sig.detach().numpy()).astype('int16')
+    pcm = np.round(32768*sig).astype('int16')
     pcm.tofile(signal_file)
