@@ -6,6 +6,17 @@ import filters
 
 Fs = 16000
 
+fid_dict = {}
+def dump_signal(x, filename):
+    return
+    if filename in fid_dict:
+        fid = fid_dict[filename]
+    else:
+        fid = open(filename, "w")
+        fid_dict[filename] = fid
+    x = x.detach().numpy().astype('float32')
+    x.tofile(fid)
+
 def gen_filterbank(N, device):
     in_freq = (np.arange(N+1, dtype='float32')/N*Fs/2)[None,:]
     out_freq = (np.arange(N, dtype='float32')/N*Fs/2)[:,None]
@@ -137,6 +148,7 @@ class CELPNetSub(nn.Module):
         device = exc_mem.device
         #print(cond.shape, prev.shape)
         
+        dump_signal(prev, 'prev_in.f32')
         if self.has_lpc:
             mem = prev[:,-16:].reshape(-1, 16, 1)
             fir_mat = mat[0]
@@ -147,6 +159,8 @@ class CELPNetSub(nn.Module):
         idx = idx + rng[None,:]
         prev = torch.gather(exc_mem, 1, idx)
         #prev = prev*0
+        dump_signal(prev, 'pitch_exc.f32')
+        dump_signal(exc_mem, 'exc_mem.f32')
         if self.has_gain:
             gain = torch.norm(prev, dim=1, p=2, keepdim=True)
             prev = prev/(1e-5+gain)
@@ -167,7 +181,8 @@ class CELPNetSub(nn.Module):
         if self.has_gain:
             out_gain = torch.exp(self.gain_dense_out(gru3_state))
             sig_out = sig_out * out_gain
-        exc_mem = torch.cat([exc_mem[:,:-self.subframe_size], sig_out], 1)
+        dump_signal(sig_out, 'exc_out.f32')
+        exc_mem = torch.cat([exc_mem[:,self.subframe_size:], sig_out], 1)
         if self.has_lpc:
             iir_mat = mat[1]
             exc2 = torch.cat([exc, sig_out.reshape(-1, self.subframe_size, 1)], 1)
@@ -177,7 +192,7 @@ class CELPNetSub(nn.Module):
         return sig_out, exc_mem, (gru1_state, gru2_state, gru3_state, passthrough)
 
 class CELPNet(nn.Module):
-    def __init__(self, subframe_size=40, nb_subframes=4, feature_dim=20, cond_size=256, passthrough_size=0, stateful=False, has_gain=False, has_lpc=False):
+    def __init__(self, subframe_size=40, nb_subframes=4, feature_dim=20, cond_size=256, passthrough_size=0, stateful=False, has_gain=False, has_lpc=False, gamma=None):
         super(CELPNet, self).__init__()
 
         self.subframe_size = subframe_size
@@ -189,16 +204,17 @@ class CELPNet(nn.Module):
         self.has_gain = has_gain
         self.has_lpc = has_lpc
         self.passthrough_size = passthrough_size
+        self.gamma = gamma
 
         self.cond_net = CELPNetCond(feature_dim=feature_dim, cond_size=cond_size)
         self.sig_net = CELPNetSub(subframe_size=subframe_size, nb_subframes=nb_subframes, cond_size=cond_size, has_gain=has_gain, has_lpc=has_lpc, passthrough_size=passthrough_size)
 
-    def forward(self, features, period, nb_frames, pre=None, states=None, lpc=None, gamma=None):
+    def forward(self, features, period, nb_frames, pre=None, states=None, lpc=None):
         device = features.device
         batch_size = features.size(0)
 
         if self.has_lpc:
-            if gamma is not None:
+            if self.gamma is not None:
                 bw = 0.9**(torch.arange(1, 17).to(device))
                 lpc = lpc*bw[None,None,:]
             ones = torch.ones((*(lpc.shape[:-1]), 1)).to(device)
