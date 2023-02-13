@@ -26,6 +26,7 @@ model_group.add_argument('--cond-size', type=int, help="first conditioning size,
 model_group.add_argument('--has-gain', action='store_true', help="use gain-shape network")
 model_group.add_argument('--has-lpc', action='store_true', help="use LPC")
 model_group.add_argument('--passthrough-size', type=int, help="state passing through in addition to audio, default: 0", default=0)
+model_group.add_argument('--gamma', type=float, help="Use A(z/gamma), default: 1", default=None)
 
 training_group = parser.add_argument_group(title="training parameters")
 training_group.add_argument('--batch-size', type=int, help="batch size, default: 512", default=512)
@@ -73,7 +74,7 @@ checkpoint['adam_betas'] = adam_betas
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 checkpoint['model_args']    = ()
-checkpoint['model_kwargs']  = {'cond_size': cond_size, 'has_gain': args.has_gain, 'has_lpc': args.has_lpc, 'passthrough_size': args.passthrough_size}
+checkpoint['model_kwargs']  = {'cond_size': cond_size, 'has_gain': args.has_gain, 'has_lpc': args.has_lpc, 'passthrough_size': args.passthrough_size, 'gamma': args.gamma}
 print('has_lpc', args.has_lpc)
 print(checkpoint['model_kwargs'])
 model = celpnet.CELPNet(*checkpoint['model_args'], **checkpoint['model_kwargs'])

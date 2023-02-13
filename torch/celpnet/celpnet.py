@@ -193,11 +193,14 @@ class CELPNet(nn.Module):
         self.cond_net = CELPNetCond(feature_dim=feature_dim, cond_size=cond_size)
         self.sig_net = CELPNetSub(subframe_size=subframe_size, nb_subframes=nb_subframes, cond_size=cond_size, has_gain=has_gain, has_lpc=has_lpc, passthrough_size=passthrough_size)
 
-    def forward(self, features, period, nb_frames, pre=None, states=None, lpc=None):
+    def forward(self, features, period, nb_frames, pre=None, states=None, lpc=None, gamma=None):
         device = features.device
         batch_size = features.size(0)
 
         if self.has_lpc:
+            if gamma is not None:
+                bw = 0.9**(torch.arange(1, 17).to(device))
+                lpc = lpc*bw[None,None,:]
             ones = torch.ones((*(lpc.shape[:-1]), 1)).to(device)
             zeros = torch.zeros((*(lpc.shape[:-1]), self.subframe_size-1)).to(device)
             a = torch.cat([ones, lpc], -1)
