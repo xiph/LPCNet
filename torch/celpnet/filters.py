@@ -7,7 +7,7 @@ def toeplitz_from_filter(a):
     device = a.device
     L = a.size(-1)
     size = (*(a.shape[:-1]), L, L)
-    A = torch.zeros(size).to(device)
+    A = torch.zeros(size, device=device)
     #print(L, A.shape)
     #Compute lower-triangular Toeplitz
     if True:
@@ -29,8 +29,8 @@ def filter_iir_response(a, N):
     L = a.size(-1)
     ar = a.flip(dims=(2,))
     size = (*(a.shape[:-1]), N)
-    R = torch.zeros(size).to(device)
-    R[:,:,0] = torch.ones((*(a.shape[:-1]))).to(device)
+    R = torch.zeros(size, device=device)
+    R[:,:,0] = torch.ones((*(a.shape[:-1])), device=device)
     for i in range(1, L):
         R[:,:,i] = - torch.sum(ar[:,:,L-i-1:-1] * R[:,:,:i], axis=-1)
         #R[:,:,i] = - torch.einsum('ijk,ijk->ij', ar[:,:,L-i-1:-1], R[:,:,:i])

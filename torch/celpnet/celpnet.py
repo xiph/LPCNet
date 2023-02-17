@@ -29,7 +29,7 @@ def gen_filterbank(N, device):
     norm = np.sum(RE, axis=0)
     #print(norm.shape)
     RE = RE/norm
-    return torch.tensor(RE).to(device)
+    return torch.tensor(RE, device=device)
 
 def gen_weight(N, device):
     freq = np.arange(N, dtype='float32')/N*Fs/2
@@ -37,12 +37,12 @@ def gen_weight(N, device):
     ERB_N = 24.7 + .108*freq
     W = 240./ERB_N
     W = W[None,:,None]
-    return torch.tensor(np.sqrt(W)).to(device)
+    return torch.tensor(np.sqrt(W), device=device)
 
 def new_specgram(N, device):
     x = np.arange(N, dtype='float32')
     w = np.sin(.5*np.pi*np.sin((x+.5)/N*np.pi)**2)
-    w = torch.tensor(w).to(device)
+    w = torch.tensor(w, device=device)
     mask = gen_filterbank(N//2, device)
     def compute_specgram(x):
         X = torch.stft(x, N, hop_length=N//4, return_complex=True, center=False, window=w)
@@ -81,9 +81,9 @@ def gen_phase_embedding(periods, frame_size):
     batch_size = periods.size(0)
     nb_frames = periods.size(1)
     w0 = 2*torch.pi/periods
-    w0_shift = torch.cat([2*torch.pi*torch.rand((batch_size, 1)).to(device)/frame_size, w0[:,:-1]], 1)
+    w0_shift = torch.cat([2*torch.pi*torch.rand((batch_size, 1), device=device)/frame_size, w0[:,:-1]], 1)
     cum_phase = frame_size*torch.cumsum(w0_shift, 1)
-    fine_phase = w0[:,:,None]*torch.broadcast_to(torch.arange(frame_size).to(device), (batch_size, nb_frames, frame_size))
+    fine_phase = w0[:,:,None]*torch.broadcast_to(torch.arange(frame_size, device=device), (batch_size, nb_frames, frame_size))
     embed = torch.unsqueeze(cum_phase, 2) + fine_phase
     embed = torch.reshape(embed, (batch_size, -1))
     return torch.cos(embed), torch.sin(embed)
@@ -154,8 +154,8 @@ class CELPNetSub(nn.Module):
             fir_mat = mat[0]
             exc = torch.bmm(fir_mat, mem)
 
-        idx = 256-torch.maximum(torch.tensor(self.subframe_size).to(device), period[:,None])
-        rng = torch.arange(self.subframe_size).to(device)
+        idx = 256-torch.maximum(torch.tensor(self.subframe_size, device=device), period[:,None])
+        rng = torch.arange(self.subframe_size, device=device)
         idx = idx + rng[None,:]
         prev = torch.gather(exc_mem, 1, idx)
         #prev = prev*0
@@ -215,10 +215,10 @@ class CELPNet(nn.Module):
 
         if self.has_lpc:
             if self.gamma is not None:
-                bw = 0.9**(torch.arange(1, 17).to(device))
+                bw = 0.9**(torch.arange(1, 17, device=device))
                 lpc = lpc*bw[None,None,:]
-            ones = torch.ones((*(lpc.shape[:-1]), 1)).to(device)
-            zeros = torch.zeros((*(lpc.shape[:-1]), self.subframe_size-1)).to(device)
+            ones = torch.ones((*(lpc.shape[:-1]), 1), device=device)
+            zeros = torch.zeros((*(lpc.shape[:-1]), self.subframe_size-1), device=device)
             a = torch.cat([ones, lpc], -1)
             a_big = torch.cat([a, zeros], -1)
             fir_mat = filters.toeplitz_from_filter(a)[:,:,:-1,:-1]
@@ -231,22 +231,22 @@ class CELPNet(nn.Module):
         phase_real, phase_imag = gen_phase_embedding(period[:, 3:-1], self.frame_size)
         #np.round(32000*phase.detach().numpy()).astype('int16').tofile('phase.sw')
 
-        prev = torch.zeros(batch_size, self.subframe_size).to(device)
-        exc_mem = torch.zeros(batch_size, 256).to(device)
-        groundtruth = torch.zeros(batch_size, self.subframe_size+16).to(device)
+        prev = torch.zeros(batch_size, self.subframe_size, device=device)
+        exc_mem = torch.zeros(batch_size, 256, device=device)
+        groundtruth = torch.zeros(batch_size, self.subframe_size+16, device=device)
         nb_pre_frames = pre.size(1)//self.frame_size if pre is not None else 0
 
         if states is None:
             states = (
-                torch.zeros(batch_size, self.cond_size).to(device),
-                torch.zeros(batch_size, self.cond_size).to(device),
-                torch.zeros(batch_size, self.cond_size).to(device),
-                torch.zeros(batch_size, self.passthrough_size).to(device)
+                torch.zeros(batch_size, self.cond_size, device=device),
+                torch.zeros(batch_size, self.cond_size, device=device),
+                torch.zeros(batch_size, self.cond_size, device=device),
+                torch.zeros(batch_size, self.passthrough_size, device=device)
             )
 
-        sig = torch.zeros((batch_size, 0)).to(device)
+        sig = torch.zeros((batch_size, 0), device=device)
         cond = self.cond_net(features, period)
-        passthrough = torch.zeros(batch_size, self.passthrough_size).to(device)
+        passthrough = torch.zeros(batch_size, self.passthrough_size, device=device)
         for n in range(nb_frames+nb_pre_frames):
             for k in range(self.nb_subframes):
                 pos = n*self.frame_size + k*self.subframe_size
