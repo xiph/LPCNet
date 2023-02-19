@@ -67,5 +67,5 @@ if __name__ == '__main__':
         sig[i] += 0.85*mem
         mem = sig[i]
 
-    pcm = np.round(32768*sig).astype('int16')
+    pcm = np.round(32768*np.clip(sig, a_max=.99, a_min=-.99)).astype('int16')
     pcm.tofile(signal_file)
