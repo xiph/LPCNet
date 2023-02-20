@@ -6,23 +6,19 @@ import math
 def toeplitz_from_filter(a):
     device = a.device
     L = a.size(-1)
+    size0 = (*(a.shape[:-1]), L, L+1)
     size = (*(a.shape[:-1]), L, L)
-    A = torch.zeros(size, device=device)
-    #print(L, A.shape)
-    #Compute lower-triangular Toeplitz
-    if True:
-        #Copy in log2(L) steps
-        A[:,:,:,0] = a[:,:,:]
-        LL = int(math.log2(L))
-        N=1
-        for i in range(LL):
-            A[:,:,N:,N:2*N] = A[:,:,:-N,:N]
-            N *= 2
-        A[:,:,N:,N:L] = A[:,:,:-N,:L-N]
-    else:
-        for i in range(L):
-            A[:,:,i:,i] = a[:,:,:L-i]
-    return A
+    rnge = torch.arange(0, L, dtype=torch.int64, device=device)
+    z = torch.tensor(0, device=device)
+    idx = torch.maximum(rnge[:,None] - rnge[None,:] + 1, z)
+    a = torch.cat([a[...,:1]*0, a], -1)
+    #print(a)
+    a = a[...,None,:]
+    #print(idx)
+    a = torch.broadcast_to(a, size0)
+    idx = torch.broadcast_to(idx, size)
+    #print(idx)
+    return torch.gather(a, -1, idx)
 
 def filter_iir_response(a, N):
     device = a.device
