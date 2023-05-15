@@ -1,126 +1,188 @@
-# LPCNet
+# LPCNet for FreeDV
 
-Low complexity implementation of the WaveRNN-based LPCNet algorithm, as described in:
+Experimental version of LPCNet that has been used to develop FreeDV 2020 - a HF radio Digital Voice mode for over the air experimentation with Neural Net speech coding.  Possibly the first use of Neural Net speech coding in real world operation.
 
-- J.-M. Valin, J. Skoglund, [LPCNet: Improving Neural Speech Synthesis Through Linear Prediction](https://jmvalin.ca/papers/lpcnet_icassp2019.pdf), *Proc. International Conference on Acoustics, Speech and Signal Processing (ICASSP)*, arXiv:1810.11846, 2019.
-- J.-M. Valin, U. Isik, P. Smaragdis, A. Krishnaswamy, [Neural Speech Synthesis on a Shoestring: Improving the Efficiency of LPCNet](https://jmvalin.ca/papers/improved_lpcnet.pdf), *Proc. ICASSP*, arxiv:2106.04129, 2022.
-- K. Subramani, J.-M. Valin, U. Isik, P. Smaragdis, A. Krishnaswamy, [End-to-end LPCNet: A Neural Vocoder With Fully-Differentiable LPC Estimation](https://jmvalin.ca/papers/lpcnet_end2end.pdf), *Proc. INTERSPEECH*, arxiv:2106.04129, 2022.
-
-For coding/PLC applications of LPCNet, see:
-
-- J.-M. Valin, J. Skoglund, [A Real-Time Wideband Neural Vocoder at 1.6 kb/s Using LPCNet](https://jmvalin.ca/papers/lpcnet_codec.pdf), *Proc. INTERSPEECH*, arxiv:1903.12087, 2019.
-- J. Skoglund, J.-M. Valin, [Improving Opus Low Bit Rate Quality with Neural Speech Synthesis](https://jmvalin.ca/papers/opusnet.pdf), *Proc. INTERSPEECH*, arxiv:1905.04628, 2020.
-- J.-M. Valin, A. Mustafa, C. Montgomery, T.B. Terriberry, M. Klingbeil, P. Smaragdis, A. Krishnaswamy, [Real-Time Packet Loss Concealment With Mixed Generative and Predictive Model](https://jmvalin.ca/papers/lpcnet_plc.pdf), *Proc. INTERSPEECH*, arxiv:2205.05785, 2022.
-
-# Introduction
-
-Work in progress software for researching low CPU complexity algorithms for speech synthesis and compression by applying Linear Prediction techniques to WaveRNN. High quality speech can be synthesised on regular CPUs (around 3 GFLOP) with SIMD support (SSE2, SSSE3, AVX, AVX2/FMA, NEON currently supported). The code also supports very low bitrate compression at 1.6 kb/s.
-
-The BSD licensed software is written in C and Python/Keras. For training, a GTX 1080 Ti or better is recommended.
-
-This software is an open source starting point for LPCNet/WaveRNN-based speech synthesis and coding.
-
-# Using the existing software
-
-You can build the code using:
+## Quickstart
 
 ```
-./autogen.sh
-./configure
-make
+$ cd ~
+$ git clone https://github.com/drowe67/LPCNet.git
+$ cd LPCNet && mkdir build_linux && cd build_linux
+$ cmake ..
+$ make
 ```
-Note that the autogen.sh script is used when building from Git and will automatically download the latest model
-(models are too large to put in Git). By default, LPCNet will attempt to use 8-bit dot product instructions on AVX\*/Neon to
-speed up inference. To disable that (e.g. to avoid quantization effects when retraining), add --disable-dot-product to the
-configure script. LPCNet does not yet have a complete implementation for some of the integer operations on the ARMv7
-architecture so for now you will also need --disable-dot-product to successfully compile on 32-bit ARM.
 
-It is highly recommended to set the CFLAGS environment variable to enable AVX or NEON *prior* to running configure, otherwise
-no vectorization will take place and the code will be very slow. On a recent x86 CPU, something like
-```
-export CFLAGS='-Ofast -g -march=native'
-```
-should work. On ARM, you can enable Neon with:
-```
-export CFLAGS='-Ofast -g -mfpu=neon'
-```
-While not strictly required, the -Ofast flag will help with auto-vectorization, especially for dot products that
-cannot be optimized without -ffast-math (which -Ofast enables). Additionally, -falign-loops=32 has been shown to
-help on x86.
+Unquantised LPCNet:
 
-You can test the capabilities of LPCNet using the lpcnet\_demo application. To encode a file:
 ```
-./lpcnet_demo -encode input.pcm compressed.bin
+$ cd ~/LPCNet/build_linux/src
+$ sox ../../wav/wia.wav -t raw -r 16000 - | ./dump_data --c2pitch --test - - | ./test_lpcnet - - | aplay -f S16_LE -r 16000
 ```
-where input.pcm is a 16-bit (machine endian) PCM file sampled at 16 kHz. The raw compressed data (no header)
-is written to compressed.bin and consists of 8 bytes per 40-ms packet.
 
-To decode:
+LPCNet at 1733 bits/s using direct-split quantiser:
 ```
-./lpcnet_demo -decode compressed.bin output.pcm
+sox ../../wav/wia.wav -t raw -r 16000 - | ./lpcnet_enc -s | ./lpcnet_dec -s | aplay -f S16_LE -r 16000
 ```
-where output.pcm is also 16-bit, 16 kHz PCM.
 
-Alternatively, you can run the uncompressed analysis/synthesis using -features
-instead of -encode and -synthesis instead of -decode.
-The same functionality is available in the form of a library. See include/lpcnet.h for the API.
+## Manually Selecting SIMD Technology
 
-To try packet loss concealment (PLC), you first need a PLC model, which you can get with:
+Cmake will select the fastest SIMD available (AVX/SSSE/None), however you can manually select e.g.:
 ```
-./download_model.sh plc-3b1eab4
+make -DDISABLE_CPU_OPTIMIZATION=ON -DSSE=ON ..
 ```
-or (for the PLC challenge submission):
+
+## CTests
+
 ```
-./download_model.sh plc_challenge
+$ cd ~/LPCNet/build_linux
+$ ctest
 ```
-PLC can be tested with:
-```
-./lpcnet_demo -plc_file noncausal_dc error_pattern.txt input.pcm output.pcm
-```
-where error_pattern.txt is a text file with one entry per 20-ms packet, with 1 meaning "packet lost" and 0 meaning "packet not lost".
-noncausal_dc is the non-causal (5-ms look-ahead) with special handling for DC offsets. It's also possible to use "noncausal", "causal",
-or "causal_dc".
 
-# Training a new model
+Note, due to precision/library issues several tests (1-3) will [only pass on some machines](https://github.com/drowe67/LPCNet/issues/17).
 
-This codebase is also meant for research and it is possible to train new models. These are the steps to do that:
+## Building Debian packages
 
-1. Set up a Keras system with GPU.
+To build Debian packages, simply run the "cpack" command after running "make". This will generate the following packages:
 
-1. Generate training data:
-   ```
-   ./dump_data -train input.s16 features.f32 data.s16
-   ```
-   where the first file contains 16 kHz 16-bit raw PCM audio (no header) and the other files are output files. This program makes several passes over the data with different filters to generate a large amount of training data.
++ lpcnet: Contains the .so and .a files for linking/executing applications dependent on LPCNet.
+* lpcnet-dev: Contains the header files for development using LPCNet.
+* lpcnet-tools: Contains tools for use with LPCNet.
 
-1. Now that you have your files, train with:
-   ```
-   python3 training_tf2/train_lpcnet.py features.f32 data.s16 model_name
-   ```
-   and it will generate an h5 file for each iteration, with model\_name as prefix. If it stops with a
-   "Failed to allocate RNN reserve space" message try specifying a smaller --batch-size for  train\_lpcnet.py.
-
-1. You can synthesise speech with Python and your GPU card (very slow):
-   ```
-   ./dump_data -test test_input.s16 test_features.f32
-   ./training_tf2/test_lpcnet.py lpcnet_model_name.h5 test_features.f32 test.s16
-   ```
-
-1. Or with C on a CPU (C inference is much faster):
-   First extract the model files nnet\_data.h and nnet\_data.c
-   ```
-   ./training_tf2/dump_lpcnet.py lpcnet_model_name.h5
-   ```
-   and move the generated nnet\_data.\* files to the src/ directory.
-   Then you just need to rebuild the software and use lpcnet\_demo as explained above.
-
-# Speech Material for Training 
-
-Suitable training material can be obtained from [Open Speech and Language Resources](https://www.openslr.org/).  See the datasets.txt file for details on suitable training data.
+Once generated, they can be installed with "dpkg -i".
 
 # Reading Further
 
+1. [Original LPCNet Repo with more instructions and background](https://github.com/mozilla/LPCNet/)
 1. [LPCNet: DSP-Boosted Neural Speech Synthesis](https://people.xiph.org/~jm/demo/lpcnet/)
-1. [A Real-Time Wideband Neural Vocoder at 1.6 kb/s Using LPCNet](https://people.xiph.org/~jm/demo/lpcnet_codec/)
-1. Sample model files (check compatibility): https://media.xiph.org/lpcnet/data/ 
+1. [Sample model files](https://jmvalin.ca/misc_stuff/lpcnet_models/)
 
+# Credits
+
+Thanks [Jean-Marc Valin](https://people.xiph.org/~jm/demo/lpcnet/) for making LPCNet available, and [Richard](https://github.com/hobbes1069) for the CMake build system.
+
+# Cross Compiling for Windows
+
+This code has been cross compiled to Windows using Fedora Linux 30, see the freedv-gui README.md, and build_windows.sh script.
+
+# Speech Material for Training
+
+Suitable training material can be obtained from the McGill University Telecommunications & Signal Processing Laboratory. Download the ISO and extract the 16k-LP7 directory, the src/concat.sh script can be used to generate a headerless file of training samples.
+
+```
+cd 16k-LP7
+sh /path/to/LPCNet/src/concat.sh
+```
+
+# Quantiser Experiments
+
+The quantiser files used for these experiments (pred_v2.tgz and split.tgz) are [here](http://rowetel.com/downloads/deep/lpcnet_quant)
+
+## Exploring Features
+
+Install GNU Octave (if thats your thing).
+
+Extract a feature file, fire up Octave, and mesh plot the 18 cepstrals for the first 100 frame (1 second):
+
+```
+$ ./dump_data --test speech_orig_16k.s16 speech_orig_16k_features.f32
+$ cd src
+$ octave --no-gui
+octave:3> f=load_f32("../speech_orig_16k_features.f32",55);
+nrows: 1080
+octave:4> mesh(f(1:100,1:18))
+```
+
+## Uniform Quantisation
+
+Listen to the effects of 4dB step uniform quantisation on cepstrals:
+
+```
+$ cat ~/Downloads/wia.wav | ./dump_data --test - - | ./quant_feat -u 4 | ./test_lpcnet - - | play -q -r 16000 -s -2 -t raw -
+```
+
+This lets us listen to the effect of quantisation error.  Once we think it sounds OK, we can compute the variance (average squared quantiser error). A 4dB step size means the error PDF is uniform in the range of -2 to +2 dB.  A uniform PDF has variance of (b-a)^2/12, so (2--2)^2/12 = 1.33 dB^2.  We can then try to design a quantiser (e.g. multi-stage VQ) to achieve that variance.
+
+## Training a Predictive VQ
+
+Clone and build [codec2](https://github.com/drowe67/codec2.git):
+
+```
+$ git clone https://github.com/drowe67/codec2.git
+$ cd codec2 && mkdir build_linux && cd build_linux && cmake ../ && sudo make install
+```
+
+In train_pred2.sh, adjust PATH for the location of codec2-dev on your machine.
+
+Generate 5E6 vectors using the -train option on dump_data to apply a bunch of different filters, then run the predictive VQ training script
+```
+$ cd LPCNet
+$ ./dump_data --train all_speech.s16 all_speech_features_5e6.f32 /dev/null
+$ ./train_pred2.sh
+```
+
+## Mbest VQ search
+
+Keeps M best candidates after each stage:
+
+```cat ~/Downloads/speech_orig_16k.s16 | ./dump_data --test - - | ./quant_feat --mbest 5 -q pred2_stage1.f32,pred2_stage2.f32,pred2_stage3.f32 > /dev/null```
+
+In this example, the VQ error variance was reduced from 2.68 to 2.28 dB^2 (I think equivalent to 3 bits), and the number of outliers >2dB reduced from 15% to 10%.
+
+## Streaming of WIA broadcast material
+
+Interesting mix of speakers and recording conditions, some not so great microphones. Faster speech than the training material.
+
+Basic unquantised LPCNet model:
+
+```sox -r 16000 ~/Downloads/wianews-2019-01-20.s16 -t raw - trim 200 | ./dump_data --c2pitch --test - - | ./test_lpcnet - - | aplay -f S16_LE -r 16000```
+
+Fully quantised at (44+8)/0.03 = 1733 bits/s:
+
+```sox -r 16000 ~/Downloads/wianews-2019-01-20.s16 -t raw - trim 200 | ./dump_data --c2pitch --test - - | ./quant_feat -g 0.25 -o 6 -d 3 -w --mbest 5 -q pred_v2_stage1.f32,pred_v2_stage2.f32,pred_v2_stage3.f32,pred_v2_stage4.f32 | ./test_lpcnet - - | aplay -f S16_LE -r 16000```
+
+## Fully quantised encoder/decoder programs
+
+Same thing as above with quantisation code packaged up into library functions.  Between quant_enc and quant_dec are 52 bit frames every 30ms:
+
+```cat ~/Downloads/speech_orig_16k.s16 | ./dump_data --c2pitch --test - - | ./quant_enc | ./quant_dec | ./test_lpcnet - - | aplay -f S16_LE -r 16000```
+
+Same thing with everything integrated into stand alone encoder and decoder programs:
+
+```cat ~/Downloads/speech_orig_16k.s16 | ./lpcnet_enc | ./lpcnet_dec | aplay -f S16_LE -r 16000```
+
+The bit stream interface is 1 bit/char, as I find that convenient for my digital voice over radio experiments.  The decimation rate, number of VQ stages, and a few other parameters can be set as command line options, for example 20ms frame rate, 3 stage VQ (2050 bits/s):
+
+```cat ~/Downloads/speech_orig_16k.s16 | ./lpcnet_enc -d 2 -n 3 | ./lpcnet_dec -d 2 -n 3 | aplay -f S16_LE -r 16000```
+
+You'll need the same set of parameters for the encoder as decoder.
+
+Useful additions would be:
+
+1. Run time loading of .h5 NN models.
+1. A --packed option to pack the quantised bits tightly, which would make the programs useful for storage applications.
+
+## Direct Split VQ
+
+Four stage VQ of log magnitudes (Ly), 11 bits (2048 entries) per stage, First 3 stages 18 elements wide; final stage 12 elements wide.  During training this acheived similar variance to 4 stage predictive quantiser (measured on 12 bands).  Same bit rate, but direct quantisation means more robust to bit errors and especially packet loss.
+
+```
+sox ~/Desktop/deep/quant/wia.wav -t raw - | ./dump_data --c2pitch --test - - | ./quant_feat -d 3 -i -p 0 --mbest 5 -q split_stage1.f32,split_stage2.f32,split_stage3.f32,split_stage4.f32 | ./test_lpcnet - - | aplay -f S16_LE -r 16000
+```
+
+Compare this to four stage predictive VQ of Cepstrals (DCT of Ly), 11 bits (2048 entries) per stage, 18 element wide vectors.  We quantise the predictor output.
+
+```
+sox ~/Desktop/deep/quant/wia.wav -t raw -  | ./dump_data --c2pitch --test - - | ./quant_feat -d 3 -w --mbest 5 -q pred_v2_stage1.f32,pred_v2_stage2.f32,pred_v2_stage3.f32,pred_v2_stage4.f32 | ./test_lpcnet - - | aplay -f S16_LE -r 16000
+```
+
+Both are decimated by a factor of 3 (so 30ms update of parameters, 30*44=1733 bits/s).
+
+# Effect of Bit Errors
+
+Random 1 Bit Error Rate (BER):
+
+Predictive:
+```sox wav/wia.wav -t raw -r 16000 - | ./lpcnet_enc | ./lpcnet_dec -b 0.01 | aplay -f S16_LE -r 16000```
+
+Direct-split:
+```sox wav/wia.wav -t raw -r 16000 - | ./lpcnet_enc -s | ./lpcnet_dec -s -b 0.01 | aplay -f S16_LE -r 16000```

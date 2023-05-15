@@ -1,0 +1,21 @@
+# ninja log v5
+2	60	7055153399762994	lpcnet-populate-prefix/src/lpcnet-populate-stamp/lpcnet-populate-mkdir	e75bcf848d203a75
+344503	344583	7055156844975525	C:/Users/slide/back/lpcnet-cmake/LPCNet/build/_deps/lpcnet-subbuild/lpcnet-populate-prefix/src/lpcnet-populate-stamp/lpcnet-populate-patch	260c686e9b362555
+2	60	7055153399762994	C:/Users/slide/back/lpcnet-cmake/LPCNet/build/_deps/lpcnet-subbuild/lpcnet-populate-prefix/src/lpcnet-populate-stamp/lpcnet-populate-mkdir	e75bcf848d203a75
+344503	344583	7055156844975525	lpcnet-populate-prefix/src/lpcnet-populate-stamp/lpcnet-populate-patch	260c686e9b362555
+61	344425	7055156843454771	lpcnet-populate-prefix/src/lpcnet-populate-stamp/lpcnet-populate-download	d875a07fc22ac3ad
+344732	344805	7055156847215737	lpcnet-populate-prefix/src/lpcnet-populate-stamp/lpcnet-populate-install	bd7aca86f38801c3
+344425	344502	7055156844175013	lpcnet-populate-prefix/src/lpcnet-populate-stamp/lpcnet-populate-update	b66716574c3cb4ff
+61	344425	7055156843454771	C:/Users/slide/back/lpcnet-cmake/LPCNet/build/_deps/lpcnet-subbuild/lpcnet-populate-prefix/src/lpcnet-populate-stamp/lpcnet-populate-download	d875a07fc22ac3ad
+344425	344502	7055156844175013	C:/Users/slide/back/lpcnet-cmake/LPCNet/build/_deps/lpcnet-subbuild/lpcnet-populate-prefix/src/lpcnet-populate-stamp/lpcnet-populate-update	b66716574c3cb4ff
+344583	344656	7055156845694879	lpcnet-populate-prefix/src/lpcnet-populate-stamp/lpcnet-populate-configure	8193604df6af4701
+344732	344805	7055156847215737	C:/Users/slide/back/lpcnet-cmake/LPCNet/build/_deps/lpcnet-subbuild/lpcnet-populate-prefix/src/lpcnet-populate-stamp/lpcnet-populate-install	bd7aca86f38801c3
+344583	344656	7055156845694879	C:/Users/slide/back/lpcnet-cmake/LPCNet/build/_deps/lpcnet-subbuild/lpcnet-populate-prefix/src/lpcnet-populate-stamp/lpcnet-populate-configure	8193604df6af4701
+344656	344732	7055156846494907	lpcnet-populate-prefix/src/lpcnet-populate-stamp/lpcnet-populate-build	aa049e380c84d9be
+344656	344732	7055156846494907	C:/Users/slide/back/lpcnet-cmake/LPCNet/build/_deps/lpcnet-subbuild/lpcnet-populate-prefix/src/lpcnet-populate-stamp/lpcnet-populate-build	aa049e380c84d9be
+344805	344882	7055156848014769	lpcnet-populate-prefix/src/lpcnet-populate-stamp/lpcnet-populate-test	47244e2637302adf
+344805	344882	7055156848014769	C:/Users/slide/back/lpcnet-cmake/LPCNet/build/_deps/lpcnet-subbuild/lpcnet-populate-prefix/src/lpcnet-populate-stamp/lpcnet-populate-test	47244e2637302adf
+344882	344979	7055156848974766	CMakeFiles/lpcnet-populate-complete	40480fce66e6107e
+344882	344979	7055156848974766	lpcnet-populate-prefix/src/lpcnet-populate-stamp/lpcnet-populate-done	40480fce66e6107e
+344882	344979	7055156848974766	C:/Users/slide/back/lpcnet-cmake/LPCNet/build/_deps/lpcnet-subbuild/CMakeFiles/lpcnet-populate-complete	40480fce66e6107e
+344882	344979	7055156848974766	C:/Users/slide/back/lpcnet-cmake/LPCNet/build/_deps/lpcnet-subbuild/lpcnet-populate-prefix/src/lpcnet-populate-stamp/lpcnet-populate-done	40480fce66e6107e

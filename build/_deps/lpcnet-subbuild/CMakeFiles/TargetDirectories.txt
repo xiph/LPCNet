@@ -1,0 +1,3 @@
+C:/Users/slide/back/lpcnet-cmake/LPCNet/build/_deps/lpcnet-subbuild/CMakeFiles/lpcnet-populate.dir
+C:/Users/slide/back/lpcnet-cmake/LPCNet/build/_deps/lpcnet-subbuild/CMakeFiles/edit_cache.dir
+C:/Users/slide/back/lpcnet-cmake/LPCNet/build/_deps/lpcnet-subbuild/CMakeFiles/rebuild_cache.dir

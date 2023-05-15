@@ -1,0 +1,46 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "C:/Users/slide/back/lpcnet-cmake/LPCNet/build/_deps/lpcnet-subbuild/CMakeFiles/lpcnet-populate"
+		},
+		{
+			"file" : "C:/Users/slide/back/lpcnet-cmake/LPCNet/build/_deps/lpcnet-subbuild/CMakeFiles/lpcnet-populate.rule"
+		},
+		{
+			"file" : "C:/Users/slide/back/lpcnet-cmake/LPCNet/build/_deps/lpcnet-subbuild/CMakeFiles/lpcnet-populate-complete.rule"
+		},
+		{
+			"file" : "C:/Users/slide/back/lpcnet-cmake/LPCNet/build/_deps/lpcnet-subbuild/lpcnet-populate-prefix/src/lpcnet-populate-stamp/lpcnet-populate-build.rule"
+		},
+		{
+			"file" : "C:/Users/slide/back/lpcnet-cmake/LPCNet/build/_deps/lpcnet-subbuild/lpcnet-populate-prefix/src/lpcnet-populate-stamp/lpcnet-populate-configure.rule"
+		},
+		{
+			"file" : "C:/Users/slide/back/lpcnet-cmake/LPCNet/build/_deps/lpcnet-subbuild/lpcnet-populate-prefix/src/lpcnet-populate-stamp/lpcnet-populate-download.rule"
+		},
+		{
+			"file" : "C:/Users/slide/back/lpcnet-cmake/LPCNet/build/_deps/lpcnet-subbuild/lpcnet-populate-prefix/src/lpcnet-populate-stamp/lpcnet-populate-install.rule"
+		},
+		{
+			"file" : "C:/Users/slide/back/lpcnet-cmake/LPCNet/build/_deps/lpcnet-subbuild/lpcnet-populate-prefix/src/lpcnet-populate-stamp/lpcnet-populate-mkdir.rule"
+		},
+		{
+			"file" : "C:/Users/slide/back/lpcnet-cmake/LPCNet/build/_deps/lpcnet-subbuild/lpcnet-populate-prefix/src/lpcnet-populate-stamp/lpcnet-populate-patch.rule"
+		},
+		{
+			"file" : "C:/Users/slide/back/lpcnet-cmake/LPCNet/build/_deps/lpcnet-subbuild/lpcnet-populate-prefix/src/lpcnet-populate-stamp/lpcnet-populate-test.rule"
+		},
+		{
+			"file" : "C:/Users/slide/back/lpcnet-cmake/LPCNet/build/_deps/lpcnet-subbuild/lpcnet-populate-prefix/src/lpcnet-populate-stamp/lpcnet-populate-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"lpcnet-populate"
+		],
+		"name" : "lpcnet-populate"
+	}
+}

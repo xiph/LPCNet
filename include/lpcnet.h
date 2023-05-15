@@ -27,6 +27,10 @@
 #ifndef _LPCNET_H_
 #define _LPCNET_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #ifndef LPCNET_EXPORT
 # if defined(WIN32)
 #  if defined(LPCNET_BUILD) && defined(DLL_EXPORT)
@@ -40,7 +44,6 @@
 #  define LPCNET_EXPORT
 # endif
 #endif
-
 
 #define NB_FEATURES 20
 #define NB_TOTAL_FEATURES 36
@@ -196,5 +199,9 @@ LPCNET_EXPORT int lpcnet_plc_update(LPCNetPLCState *st, short *pcm);
 LPCNET_EXPORT int lpcnet_plc_conceal(LPCNetPLCState *st, short *pcm);
 
 LPCNET_EXPORT void lpcnet_plc_fec_add(LPCNetPLCState *st, const float *features);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
