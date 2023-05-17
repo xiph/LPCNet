@@ -38,6 +38,7 @@ liblpcnet_la_SOURCES = \
 	src/plc_data.c \
 	src/ceps_codebooks.c \
 	src/pitch.c \
+	src/parse_lpcnet_weights.c \
 	src/freq.c \
 	src/kiss_fft.c \
 	src/lpcnet_plc.c
@@ -46,7 +47,7 @@ liblpcnet_la_LIBADD = $(DEPS_LIBS) $(lrintf_lib) $(LIBM)
 liblpcnet_la_LDFLAGS = -no-undefined \
  -version-info @OP_LT_CURRENT@:@OP_LT_REVISION@:@OP_LT_AGE@
 
-noinst_PROGRAMS = lpcnet_demo dump_data
+noinst_PROGRAMS = lpcnet_demo dump_data dump_weights_blob
 
 lpcnet_demo_SOURCES = src/lpcnet_demo.c
 lpcnet_demo_LDADD = liblpcnet.la
@@ -60,6 +61,10 @@ lpcnet_demo_LDADD = liblpcnet.la
 dump_data_SOURCES = src/common.c src/dump_data.c src/burg.c src/freq.c src/kiss_fft.c src/pitch.c src/lpcnet_dec.c src/lpcnet_enc.c src/lpcnet_tables.c src/ceps_codebooks.c
 dump_data_LDADD = $(LIBM)
 dump_data_CFLAGS = $(AM_CFLAGS)
+
+dump_weights_blob_SOURCES = src/nnet_data.c src/write_lpcnet_weights.c
+dump_weights_blob_LDADD = $(LIBM)
+dump_weights_blob_CFLAGS = $(AM_CFLAGS) -DDUMP_BINARY_WEIGHTS
 
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = lpcnet.pc
