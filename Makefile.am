@@ -62,7 +62,7 @@ dump_data_SOURCES = src/common.c src/dump_data.c src/burg.c src/freq.c src/kiss_
 dump_data_LDADD = $(LIBM)
 dump_data_CFLAGS = $(AM_CFLAGS)
 
-dump_weights_blob_SOURCES = src/nnet_data.c src/write_lpcnet_weights.c
+dump_weights_blob_SOURCES = src/nnet_data.c src/plc_data.c src/write_lpcnet_weights.c
 dump_weights_blob_LDADD = $(LIBM)
 dump_weights_blob_CFLAGS = $(AM_CFLAGS) -DDUMP_BINARY_WEIGHTS
 
