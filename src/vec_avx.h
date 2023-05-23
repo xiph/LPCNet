@@ -519,7 +519,7 @@ static inline float sigmoid_approx(float x)
 
 #endif
 
-static inline float celt_exp(float x)
+static inline float lpcnet_exp(float x)
 {
    float out[8];
    __m256 X, Y;
@@ -540,7 +540,7 @@ static inline void softmax(float *y, const float *x, int N)
         _mm256_storeu_ps(&y[i], Y);
     }
     for (;i<N;i++)
-        y[i] = celt_exp(x[i]);
+        y[i] = lpcnet_exp(x[i]);
 }
 
 #ifdef __AVX__
