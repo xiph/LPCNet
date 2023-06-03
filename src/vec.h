@@ -35,15 +35,19 @@
 #include "arch.h"
 
 
-#if defined(__AVX__) || defined(__SSE2__)
+#if defined(LPCNET_TEST)
+#define NO_OPTIMIZATIONS
+#elif defined(__AVX__) || defined(__SSE2__)
 #include "vec_avx.h"
 #elif (defined(__ARM_NEON__) || defined(__ARM_NEON)) && !defined(DISABLE_NEON)
 #include "vec_neon.h"
 #else
+#define NO_OPTIMIZATIONS
+#endif
+
+#ifdef NO_OPTIMIZATIONS
 
 #define MAX_INPUTS (2048)
-
-#define NO_OPTIMIZATIONS
 
 #ifndef DISABLE_DOT_PROD
 #define DOT_PROD
@@ -341,7 +345,9 @@ static inline void sparse_sgemv_accum8x4(float *out, const qweight *w, int rows,
 
 #else /*DOT_PROD*/
 
+#ifndef LPCNET_TEST
 #define sgemv_accum8x4 sgemv_accum
+#endif
 
 
 static inline void sparse_sgemv_accum8x4(float *out, const qweight *w, int rows, int ignore, const int *idx, const float *x)
