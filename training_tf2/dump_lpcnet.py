@@ -267,7 +267,7 @@ if __name__ == "__main__":
     parser.add_argument('--nnet-header', type=str, help='name of c header file for dumped model', default='nnet_data.h')
     parser.add_argument('--nnet-source', type=str, help='name of c source file for dumped model', default='nnet_data.c')
     parser.add_argument('--lpc-gamma', type=float, help='LPC weighting factor. If not specified I will attempt to read it from the model file with 1 as default', default=None)
-    parser.add_argument('--lookahead', type=float, help='Features lookahead. If not specified I will attempt to read it from the model file with 2 as default', default=None)
+    parser.add_argument('--lookahead', type=int, help='Features lookahead. If not specified I will attempt to read it from the model file with 2 as default', default=None)
 
     args = parser.parse_args()
 
