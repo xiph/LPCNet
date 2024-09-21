@@ -1,3 +1,18 @@
+**Important**: LPCNet is no longer being actively developed. It will remain
+available but for most applications, users are encouraged to switch to the
+Framewise Autoregressive GAN (FARGAN). FARGAN achieves better quality than
+LPCNet with just 600 MFLOPS complexity. That's 1/5 of the complexity of the
+most optimized LPCNet and 1/20 of the original LPCNet.
+
+- J.-M. Valin, A. Mustafa, Jan Büthe, [Very Low Complexity Speech Synthesis Using Framewise Autoregressive GAN (FARGAN) with Pitch Prediction](https://arxiv.org/pdf/2405.21069), IEEE Signal Processing Letters, 2024, arXiv:2405.21069.
+
+See our [demo page](https://ahmed-fau.github.io/fargan_demo/) for comparisons
+with LPCNet, HiFi-GAN, CARGAN and FWGAN.
+The PyTorch [source code](https://gitlab.xiph.org/xiph/opus/-/tree/main/dnn/torch/fargan)
+along with an optimized C implementation are available as part of the larger
+[Opus codec](https://opus-codec.org) implementation (FARGAN is used for PLC
+and deep redundancy within Opus).
+
 # LPCNet
 
 Low complexity implementation of the WaveRNN-based LPCNet algorithm, as described in:
